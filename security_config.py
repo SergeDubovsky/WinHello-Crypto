@@ -30,7 +30,10 @@ AWS_CHALLENGE_MESSAGE = "AWSCredentialChallenge"
 
 # AWS validation patterns
 AWS_PATTERNS = {
-    'access_key': re.compile(r'^AKIA[0-9A-Z]{16}$'),
+    # AWS access keys typically start with specific prefixes like AKIA or ASIA
+    # but may evolve over time. Accept known prefixes and fall back to a generic
+    # 20-character alphanumeric pattern to remain future-proof.
+    'access_key': re.compile(r'^(?:AKIA|ASIA|ACCA|[A-Z0-9]{4})[0-9A-Z]{16}$'),
     'secret_key': re.compile(r'^[A-Za-z0-9/+=]{40}$'),
     'session_token': re.compile(r'^[A-Za-z0-9/+=]{100,}$'),
     'profile_name': re.compile(r'^[a-zA-Z0-9-_\.]{1,64}$'),
