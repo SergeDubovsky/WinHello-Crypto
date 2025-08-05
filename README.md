@@ -99,33 +99,6 @@ python aws_hello_creds.py remove-profile old-profile
 python aws_hello_creds.py get-credentials --profile my-profile
 ```
 
-### Migration from Certificate-based Credentials
-
-If you're currently using certificate-based credential encryption (like the PowerShell implementation), you can migrate:
-
-1. Extract your existing credentials
-2. Add them using the `add-profile` command
-3. Update your AWS config to use the new `credential_process`
-4. Test with `aws sts get-caller-identity --profile your-profile`
-
-### PowerShell Integration
-
-Use the included PowerShell module for seamless integration:
-
-```powershell
-# Import the module
-Import-Module .\AWSHelloCredentials.psm1
-
-# Add credentials using PowerShell
-Add-AWSHelloProfile -ProfileName "my-aws" -AccessKey "AKIA..." -SecretKey "xyz..." -Region "us-east-1"
-
-# List profiles
-Get-AWSHelloProfiles
-
-# Test a profile
-Test-AWSHelloProfile -ProfileName "my-aws"
-```
-
 ### Windows Batch Integration
 
 Use the batch file for quick access:
