@@ -99,8 +99,14 @@ cd WinHello-Crypto
 2. Install required dependencies:
 
 ```bash
-pip install cryptography winrt
+# Install from requirements.txt (recommended)
+pip install -r requirements.txt
+
+# Or install core dependencies only
+pip install cryptography pywinrt
 ```
+
+**Note**: `pywinrt` is only available on Windows and provides Windows Hello integration.
 
 ## AWS Credentials Management
 
