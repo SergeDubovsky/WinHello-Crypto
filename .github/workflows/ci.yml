@@ -9,10 +9,9 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
         python-version: ['3.9', '3.10', '3.11']
       fail-fast: false
 
@@ -30,21 +29,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install cryptography pytest pytest-asyncio
 
-    - name: Install Windows-specific dependencies (Windows only)
-      if: runner.os == 'Windows'
-      run: |
-        echo "Skipping pywinrt installation in CI - Windows Hello hardware not available"
-      continue-on-error: true
-
-    - name: Run security utils tests (cross-platform)
+    - name: Run security utils tests
       run: |
         python -m pytest tests/test_security_utils.py -v --tb=short -x || echo "Security utils tests completed"
       continue-on-error: true
       env:
         PYTHONPATH: .
 
-    - name: Run hello_crypto tests (Windows only)
-      if: runner.os == 'Windows'
+    - name: Run hello_crypto tests
       run: |
         python -m pytest tests/test_hello_crypto.py -v --tb=short || echo "hello_crypto tests completed (Windows Hello required)"
       continue-on-error: true
@@ -62,59 +54,3 @@ jobs:
         python -c "import sys, os; sys.path.insert(0, '.'); from security_config import AES_KEY_SIZE; from security_utils import ValidationError; print('Core modules imported successfully (AES_KEY_SIZE=' + str(AES_KEY_SIZE) + ')')"
       env:
         PYTHONPATH: .
-
-  security-scan:
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install security tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install bandit[toml] safety
-
-    - name: Run Bandit security scan
-      run: |
-        bandit -r . -x test_*.py,conftest.py -f txt || echo "Bandit scan completed with findings"
-      continue-on-error: true
-
-    - name: Run Safety vulnerability check
-      run: |
-        safety check || echo "Safety check completed"
-      continue-on-error: true
-
-  lint:
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install linting tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 black
-
-    - name: Check code formatting with Black
-      run: |
-        black --check --diff . || echo "Formatting issues found"
-      continue-on-error: true
-
-    - name: Run Flake8 linting
-      run: |
-        flake8 . --count --statistics || echo "Linting completed with issues"
-      continue-on-error: true

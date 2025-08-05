@@ -9,7 +9,7 @@ on:
 
 jobs:
   security-scan:
-    runs-on: ubuntu-latest  # Use Linux for security scans (faster and more reliable)
+    runs-on: windows-latest  # Use Windows for consistency with Windows-only project
     
     steps:
     - uses: actions/checkout@v4
@@ -124,31 +124,35 @@ jobs:
         PYTHONPATH: .
 
   documentation-check:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     if: always()
     
     steps:
     - uses: actions/checkout@v4
     
     - name: Check README links
+      shell: pwsh
       run: |
         # Check for broken links in README (basic check)
-        grep -n "http" README.md || echo "No HTTP links found"
+        Select-String -Path README.md -Pattern "http" | ForEach-Object { Write-Host "Line $($_.LineNumber): $($_.Line)" }
+        if (-not (Select-String -Path README.md -Pattern "http")) { Write-Host "No HTTP links found" }
         
         # Check that essential sections exist
-        grep -q "## Installation" README.md && echo "✅ Installation section found" || echo "❌ Installation section missing"
-        grep -q "## Usage" README.md && echo "✅ Usage section found" || echo "❌ Usage section missing"
-        grep -q "## Security" README.md && echo "✅ Security section found" || echo "❌ Security section missing"
+        if (Select-String -Path README.md -Pattern "## Installation") { Write-Host "✅ Installation section found" } else { Write-Host "❌ Installation section missing" }
+        if (Select-String -Path README.md -Pattern "## Usage") { Write-Host "✅ Usage section found" } else { Write-Host "❌ Usage section missing" }
+        if (Select-String -Path README.md -Pattern "## Security") { Write-Host "✅ Security section found" } else { Write-Host "❌ Security section missing" }
     
     - name: Check file structure
+      shell: pwsh
       run: |
         # Ensure critical files exist
-        test -f requirements.txt && echo "✅ requirements.txt exists" || echo "❌ requirements.txt missing"
-        test -f setup.py && echo "✅ setup.py exists" || echo "❌ setup.py missing"
-        test -f LICENSE && echo "✅ LICENSE exists" || echo "❌ LICENSE missing"
+        if (Test-Path requirements.txt) { Write-Host "✅ requirements.txt exists" } else { Write-Host "❌ requirements.txt missing" }
+        if (Test-Path setup.py) { Write-Host "✅ setup.py exists" } else { Write-Host "❌ setup.py missing" }
+        if (Test-Path LICENSE) { Write-Host "✅ LICENSE exists" } else { Write-Host "❌ LICENSE missing" }
         
         # Check for test files
-        find . -name "*test*.py" | wc -l | xargs echo "Test files found:"
+        $testFiles = Get-ChildItem -Recurse -Name "*test*.py"
+        Write-Host "Test files found: $($testFiles.Count)"
 
   dependency-check:
     runs-on: windows-latest
