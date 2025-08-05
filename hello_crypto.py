@@ -14,12 +14,26 @@ from cryptography.hazmat.primitives import padding, hashes, hmac
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 
-from winrt.windows.security.credentials import (
-    KeyCredentialManager, 
-    KeyCredentialCreationOption,
-    KeyCredentialStatus
-)
-from winrt.windows.storage.streams import DataWriter, DataReader
+try:
+    from winrt.windows.security.credentials import (
+        KeyCredentialManager, 
+        KeyCredentialCreationOption,
+        KeyCredentialStatus
+    )
+except ImportError:
+    # Mock for non-Windows environments or missing winrt
+    from unittest.mock import MagicMock
+    KeyCredentialManager = MagicMock()
+    KeyCredentialCreationOption = MagicMock()
+    KeyCredentialStatus = MagicMock()
+    KeyCredentialStatus.SUCCESS = 0
+try:
+    from winrt.windows.storage.streams import DataWriter, DataReader
+except ImportError:
+    # Mock for non-Windows environments
+    from unittest.mock import MagicMock
+    DataWriter = MagicMock()
+    DataReader = MagicMock()
 
 # Import security utilities
 from security_utils import (

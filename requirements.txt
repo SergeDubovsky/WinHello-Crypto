@@ -5,8 +5,8 @@
 cryptography>=41.0.0,<42.0.0
 
 # Windows Runtime APIs for Windows Hello integration
-# Note: This package is Windows-specific
-pywinrt>=2.0.0,<3.0.0
+# Note: This package is Windows-specific and may not be available on all CI environments
+pywinrt>=2.0.0,<3.0.0; platform_system=="Windows"
 
 # Development and testing dependencies
 pytest>=7.4.0,<8.0.0
