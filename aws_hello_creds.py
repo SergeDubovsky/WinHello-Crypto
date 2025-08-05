@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 
 from hello_crypto import FileEncryptor, WindowsHelloError
+from security_utils import (
+    SecurityError, ValidationError, RateLimitError, rate_limiter,
+    audit_log, validate_aws_credentials, validate_aws_region,
+    validate_profile_name, secure_memory_clear, sanitize_error_message
+)
+from security_config import (
+    AWS_PATTERNS, AWS_REGIONS, SECURITY_EVENTS, KEY_NAME_AWS, AWS_CHALLENGE_MESSAGE
+)
 
 
 # Configure logging
@@ -30,50 +38,24 @@ logger = logging.getLogger(__name__)
 class AWSCredentialManager:
     """Manages AWS credentials with Windows Hello encryption."""
     
-    # AWS Access Key patterns for validation
-    ACCESS_KEY_PATTERN = re.compile(r'^AKIA[0-9A-Z]{16}$')
-    SECRET_KEY_PATTERN = re.compile(r'^[A-Za-z0-9/+=]{40}$')
-    SESSION_TOKEN_PATTERN = re.compile(r'^[A-Za-z0-9/+=]{100,}$')
-    PROFILE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9-_\.]+$')
+    # Validation patterns imported from security_config
     
     def __init__(self):
         self.encryptor = FileEncryptor(
-            key_name="AWSCredentialKey",
-            challenge="AWSCredentialChallenge"
+            key_name=KEY_NAME_AWS,
+            challenge=AWS_CHALLENGE_MESSAGE
         )
         self.aws_dir = Path.home() / ".aws"
         self.credentials_dir = self.aws_dir / "hello-encrypted"
         
     def _validate_profile_name(self, profile_name: str) -> None:
         """Validate AWS profile name format."""
-        if not profile_name or not profile_name.strip():
-            raise ValueError("Profile name cannot be empty")
-        
-        if not self.PROFILE_NAME_PATTERN.match(profile_name):
-            raise ValueError(
-                "Profile name can only contain letters, numbers, hyphens, underscores, and periods"
-            )
-        
-        if len(profile_name) > 64:
-            raise ValueError("Profile name cannot exceed 64 characters")
+        validate_profile_name(profile_name)
     
     def _validate_aws_credentials(self, access_key: str, secret_key: str, 
                                  session_token: Optional[str] = None) -> None:
         """Validate AWS credential format."""
-        if not self.ACCESS_KEY_PATTERN.match(access_key):
-            raise ValueError(
-                "Invalid AWS Access Key format. Must start with 'AKIA' followed by 16 alphanumeric characters"
-            )
-        
-        if not self.SECRET_KEY_PATTERN.match(secret_key):
-            raise ValueError(
-                "Invalid AWS Secret Key format. Must be 40 characters of base64-like characters"
-            )
-        
-        if session_token and not self.SESSION_TOKEN_PATTERN.match(session_token):
-            raise ValueError(
-                "Invalid AWS Session Token format. Must be 100+ characters of base64-like characters"
-            )
+        validate_aws_credentials(access_key, secret_key, session_token)
         
     def _ensure_directories(self) -> None:
         """Ensure required directories exist."""
@@ -92,6 +74,16 @@ class AWSCredentialManager:
             # Validate inputs
             self._validate_profile_name(profile_name)
             self._validate_aws_credentials(access_key, secret_key, session_token)
+            
+            if region:
+                validate_aws_region(region)
+                
+            # Audit log the attempt
+            audit_log(SECURITY_EVENTS['CRED_STORE'], {
+                'profile_name': profile_name,
+                'has_session_token': bool(session_token),
+                'region': region
+            })
             
             if not await self.encryptor.is_supported():
                 raise WindowsHelloError("Windows Hello is not supported on this device")
@@ -141,18 +133,39 @@ class AWSCredentialManager:
                 # Update AWS config file
                 await self._update_aws_config(profile_name, region)
                 
-            finally:
-                self.encryptor.secure_clear(key_array)
+                # Audit successful storage
+                audit_log(SECURITY_EVENTS['CRED_STORE'], {
+                    'profile_name': profile_name,
+                    'success': True
+                })
                 
-        except ValueError as e:
+            finally:
+                secure_memory_clear(key_array)
+                
+        except (ValueError, ValidationError) as e:
+            audit_log(SECURITY_EVENTS['VALIDATION_ERROR'], {
+                'operation': 'add_profile',
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
             logger.error(f"Validation error: {e}")
             raise
         except WindowsHelloError as e:
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'add_profile', 
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
             logger.error(f"Windows Hello error: {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error adding profile '{profile_name}': {e}")
-            raise WindowsHelloError(f"Failed to add profile: {e}")
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'add_profile',
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
+            logger.error(f"Unexpected error adding profile '{profile_name}': {sanitize_error_message(e, 'credential storage')}")
+            raise WindowsHelloError(f"Failed to add profile: {sanitize_error_message(e, 'credential storage')}")
         
     async def _update_aws_config(self, profile_name: str, region: Optional[str] = None) -> None:
         """Update the AWS config file with credential_process."""
@@ -242,6 +255,9 @@ class AWSCredentialManager:
                 raise FileNotFoundError(f"No encrypted credentials found for profile '{profile_name}'")
                 
             logger.info(f"Retrieving credentials for profile '{profile_name}'")
+            audit_log(SECURITY_EVENTS['CRED_RETRIEVE'], {
+                'profile_name': profile_name
+            })
             
             # Read encrypted data
             try:
@@ -261,28 +277,55 @@ class AWSCredentialManager:
                 try:
                     credential_data = json.loads(decrypted_data.decode('utf-8'))
                 except json.JSONDecodeError as e:
+                    audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                        'operation': 'credential_parsing',
+                        'profile_name': profile_name,
+                        'error': 'json_decode_error'
+                    })
                     raise WindowsHelloError(f"Invalid credential data format: {e}")
                 
                 # Validate required fields
                 required_fields = ["aws_access_key_id", "aws_secret_access_key"]
                 missing_fields = [field for field in required_fields if field not in credential_data]
                 if missing_fields:
+                    audit_log(SECURITY_EVENTS['VALIDATION_ERROR'], {
+                        'operation': 'credential_validation',
+                        'profile_name': profile_name,
+                        'missing_fields': missing_fields
+                    })
                     raise WindowsHelloError(f"Missing required credential fields: {', '.join(missing_fields)}")
+                
+                # Audit successful retrieval
+                audit_log(SECURITY_EVENTS['CRED_RETRIEVE'], {
+                    'profile_name': profile_name,
+                    'success': True,
+                    'has_session_token': 'aws_session_token' in credential_data
+                })
                 
                 logger.info(f"Successfully retrieved credentials for profile '{profile_name}'")
                 return credential_data
                 
             finally:
-                self.encryptor.secure_clear(key_array)
+                secure_memory_clear(key_array)
                 
         except WindowsHelloError:
             raise
-        except ValueError as e:
+        except (ValueError, ValidationError) as e:
+            audit_log(SECURITY_EVENTS['VALIDATION_ERROR'], {
+                'operation': 'get_credentials',
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
             logger.error(f"Validation error: {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error retrieving credentials for '{profile_name}': {e}")
-            raise WindowsHelloError(f"Failed to retrieve credentials: {e}")
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'get_credentials',
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
+            logger.error(f"Unexpected error retrieving credentials for '{profile_name}': {sanitize_error_message(e, 'credential retrieval')}")
+            raise WindowsHelloError(f"Failed to retrieve credentials: {sanitize_error_message(e, 'credential retrieval')}")
         
     async def list_profiles(self) -> None:
         """List all available encrypted profiles."""
@@ -311,9 +354,15 @@ class AWSCredentialManager:
             return
             
         credential_file.unlink()
-        print(f"✅ Encrypted credentials for profile '{profile_name}' removed.")
         
-        # Optionally remove from AWS config
+        # Audit the removal
+        audit_log(SECURITY_EVENTS['CRED_RETRIEVE'], {
+            'operation': 'remove_profile',
+            'profile_name': profile_name,
+            'success': True
+        })
+        
+        print(f"✅ Encrypted credentials for profile '{profile_name}' removed.")
         print(f"Note: You may want to manually remove the profile from ~/.aws/config")
 
 

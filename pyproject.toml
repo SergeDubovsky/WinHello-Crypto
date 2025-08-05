@@ -1,0 +1,149 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "winhello-crypto"
+version = "2.0.0"
+description = "Enterprise-Grade AWS Credential Security with Windows Hello Biometric Authentication"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Serge Dubovsky", email = "serge@lavinna.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+    "Topic :: Utilities",
+]
+keywords = [
+    "windows-hello", "biometric", "authentication", "encryption", 
+    "aws", "credentials", "security", "cryptography"
+]
+requires-python = ">=3.7"
+dependencies = [
+    "cryptography>=41.0.0,<42.0.0",
+    "pywinrt>=2.0.0,<3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0,<8.0.0",
+    "pytest-asyncio>=0.21.0,<1.0.0",
+    "pytest-cov>=4.1.0,<5.0.0",
+    "black>=23.7.0,<24.0.0",
+    "flake8>=6.0.0,<7.0.0",
+    "mypy>=1.5.0,<2.0.0",
+]
+security = [
+    "bandit>=1.7.5,<2.0.0",
+    "safety>=2.3.0,<3.0.0",
+]
+docs = [
+    "sphinx>=7.1.0,<8.0.0",
+    "sphinx-rtd-theme>=1.3.0,<2.0.0",
+]
+
+[project.scripts]
+winhello-crypto = "hello_crypto:main"
+aws-hello-creds = "aws_hello_creds:main"
+
+[project.urls]
+Homepage = "https://github.com/SergeDubovsky/WinHello-Crypto"
+Repository = "https://github.com/SergeDubovsky/WinHello-Crypto"
+"Bug Reports" = "https://github.com/SergeDubovsky/WinHello-Crypto/issues"
+Documentation = "https://github.com/SergeDubovsky/WinHello-Crypto/blob/main/README.md"
+
+[tool.setuptools]
+py-modules = ["hello_crypto", "aws_hello_creds", "security_utils", "security_config"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.bat"]
+
+[tool.black]
+line-length = 100
+target-version = ['py37', 'py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.flake8]
+max-line-length = 100
+max-complexity = 10
+ignore = ["E203", "W503", "F401"]
+exclude = [".git", "__pycache__", "build", "dist", ".eggs"]
+
+[tool.mypy]
+python_version = "3.7"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --tb=short"
+testpaths = [
+    ".",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "test_*.py",
+    "setup.py",
+    "*/tests/*",
+    "*/__pycache__/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "pass",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "test_*.py"]
+skips = ["B101"]  # Skip assert_used test
+
+[tool.bandit.assert_used]
+skips = ['*_test.py', '*/test_*.py']

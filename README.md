@@ -4,7 +4,7 @@
 [![Encryption](https://img.shields.io/badge/Encryption-AES%20256%20%2B%20PBKDF2-blue.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-yellow.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
-[![License](https://img.shields.io/badge/License-MIT-red.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-red.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/blob/main/LICENSE)
 
 **🔐 Enterprise-Grade AWS Credential Security with Windows Hello Biometric Authentication**
 
@@ -288,7 +288,7 @@ await encryptor.decrypt_file("input.enc", "output.txt")
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Security Considerations
 
