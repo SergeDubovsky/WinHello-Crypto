@@ -33,7 +33,7 @@ jobs:
     - name: Install Windows-specific dependencies (Windows only)
       if: runner.os == 'Windows'
       run: |
-        pip install pywinrt || echo "Failed to install Windows-specific dependencies"
+        echo "Skipping pywinrt installation in CI - Windows Hello hardware not available"
       continue-on-error: true
 
     - name: Run security utils tests (cross-platform)
@@ -59,16 +59,7 @@ jobs:
 
     - name: Test core functionality imports
       run: |
-        python -c "
-        import sys, os
-        sys.path.insert(0, '.')
-        try:
-            from security_config import AES_KEY_SIZE
-            from security_utils import ValidationError
-            print(f'✅ Core modules imported successfully (AES_KEY_SIZE={AES_KEY_SIZE})')
-        except Exception as e:
-            print(f'⚠️  Import issues: {e}')
-        "
+        python -c "import sys, os; sys.path.insert(0, '.'); from security_config import AES_KEY_SIZE; from security_utils import ValidationError; print('Core modules imported successfully (AES_KEY_SIZE=' + str(AES_KEY_SIZE) + ')')"
       env:
         PYTHONPATH: .
 
