@@ -1,5 +1,7 @@
 # WinHello-Crypto
 
+[![CI Tests](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/ci.yml)
+[![Security Tests](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/security-tests.yml/badge.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/security-tests.yml)
 [![Security](https://img.shields.io/badge/Security-Enterprise%20Grade-green.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![Encryption](https://img.shields.io/badge/Encryption-AES%20256%20%2B%20PBKDF2-blue.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
