@@ -76,13 +76,12 @@ class TestFileEncryptor:
         """Test decryption with corrupted data (integrity check should fail)."""
         original_data = b"Test data for integrity check"
         encrypted = encryptor.encrypt_data(original_data, test_key)
-        
-        # Corrupt the encrypted data
+
+        # Corrupt the ciphertext but leave the HMAC untouched
         corrupted = bytearray(encrypted)
-        corrupted[-1] ^= 1  # Flip a bit
-        
-        # Corrupted data can fail at padding stage or integrity check stage
-        with pytest.raises(ValueError, match="(Invalid padding|Data integrity check failed)"):
+        corrupted[AES_BLOCK_SIZE] ^= 1  # Flip a bit in the ciphertext portion
+
+        with pytest.raises(ValueError, match="Data integrity check failed"):
             encryptor.decrypt_data(bytes(corrupted), test_key)
     
     def test_encrypt_different_data_produces_different_results(self, encryptor, test_key):

@@ -199,27 +199,24 @@ class FileEncryptor:
         
         # Generate cryptographically secure random IV
         iv = secrets.token_bytes(AES_BLOCK_SIZE)
-        
-        # Calculate HMAC for integrity protection using proper HMAC
-        hmac_key = hashlib.sha256(key + b"hmac_key_derivation").digest()
-        h = hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
-        h.update(data)
-        data_hmac = h.finalize()
-        
-        # Combine HMAC with data (HMAC first for security)
-        data_with_hmac = data_hmac + data
-        
+
         # Pad data using PKCS7
         padder = padding.PKCS7(AES_BLOCK_SIZE * 8).padder()
-        padded_data = padder.update(data_with_hmac) + padder.finalize()
-        
+        padded_data = padder.update(data) + padder.finalize()
+
         # Encrypt using AES-256-CBC
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         encryptor = cipher.encryptor()
         ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-        
-        # Return IV + encrypted data
-        result = iv + ciphertext
+
+        # Calculate HMAC for integrity protection over IV + ciphertext
+        hmac_key = hashlib.sha256(key + b"hmac_key_derivation").digest()
+        h = hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
+        h.update(iv + ciphertext)
+        data_hmac = h.finalize()
+
+        # Return IV + ciphertext + HMAC
+        result = iv + ciphertext + data_hmac
         logger.debug(f"Encryption completed, output size: {len(result)} bytes")
         return result
     
@@ -230,13 +227,30 @@ class FileEncryptor:
         
         if len(data) < AES_BLOCK_SIZE + 32:  # IV + minimum HMAC + data
             raise ValueError("Invalid encrypted data: too short")
-        
+
         logger.debug(f"Decrypting {len(data)} bytes of data")
-        
-        # Extract IV and ciphertext
+
+        # Extract IV, ciphertext, and HMAC
         iv = data[:AES_BLOCK_SIZE]
-        ciphertext = data[AES_BLOCK_SIZE:]
-        
+        stored_hmac = data[-32:]
+        ciphertext = data[AES_BLOCK_SIZE:-32]
+
+        if len(ciphertext) == 0:
+            raise ValueError("Invalid encrypted data: missing ciphertext")
+
+        # Verify HMAC integrity before decryption
+        hmac_key = hashlib.sha256(key + b"hmac_key_derivation").digest()
+        h = hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
+        h.update(iv + ciphertext)
+        expected_hmac = h.finalize()
+
+        # Constant-time comparison to prevent timing attacks
+        if not constant_time_compare(stored_hmac, expected_hmac):
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'error': 'integrity_check_failed'
+            })
+            raise ValueError("Data integrity check failed - file may be corrupted or tampered with")
+
         # Decrypt using AES-256-CBC
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         decryptor = cipher.decryptor()
@@ -248,37 +262,17 @@ class FileEncryptor:
                 'details': 'cipher_decryption_error'
             })
             raise ValueError(f"Decryption failed: {sanitize_error_message(e, 'decryption')}")
-        
+
         # Remove PKCS7 padding
         unpadder = padding.PKCS7(AES_BLOCK_SIZE * 8).unpadder()
         try:
-            data_with_hmac = unpadder.update(padded_plaintext) + unpadder.finalize()
+            plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
         except Exception as e:
             audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
                 'error': 'padding_removal_failed'
             })
             raise ValueError("Invalid padding - data may be corrupted")
-        
-        # Verify HMAC integrity (HMAC is first 32 bytes)
-        if len(data_with_hmac) < 32:
-            raise ValueError("Invalid decrypted data: missing HMAC")
-            
-        stored_hmac = data_with_hmac[:32]
-        plaintext = data_with_hmac[32:]
-        
-        # Calculate expected HMAC using proper HMAC
-        hmac_key = hashlib.sha256(key + b"hmac_key_derivation").digest()
-        h = hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
-        h.update(plaintext)
-        expected_hmac = h.finalize()
-        
-        # Constant-time comparison to prevent timing attacks
-        if not constant_time_compare(stored_hmac, expected_hmac):
-            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
-                'error': 'integrity_check_failed'
-            })
-            raise ValueError("Data integrity check failed - file may be corrupted or tampered with")
-        
+
         logger.debug(f"Decryption completed, output size: {len(plaintext)} bytes")
         return plaintext
     
