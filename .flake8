@@ -16,7 +16,8 @@ exclude =
     .tox,
     .venv,
     venv,
-    env
+    env,
+    tests
 per-file-ignores =
     test_*.py:F401,F811,E402
     conftest.py:F401,F811

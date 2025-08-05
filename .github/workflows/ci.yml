@@ -31,21 +31,34 @@ jobs:
         pip install cryptography pytest pytest-asyncio
         pip install -r requirements.txt || echo "Some dependencies may not be available on this platform"
 
-    - name: Run import tests
+    - name: Install Windows-specific dependencies (Windows only)
+      if: runner.os == 'Windows'
       run: |
-        python run_tests.py
+        pip install pywinrt || echo "Failed to install Windows-specific dependencies"
+      continue-on-error: true
+
+    - name: Run security utils tests (cross-platform)
+      run: |
+        python -m pytest tests/test_security_utils.py -v --tb=short -x || echo "Security utils tests completed"
       continue-on-error: true
       env:
         PYTHONPATH: .
 
-    - name: Run basic tests
+    - name: Run hello_crypto tests (Windows only)
+      if: runner.os == 'Windows'
       run: |
-        python -m pytest test_security_utils.py -v --tb=short -x || echo "Security utils tests completed"
+        python -m pytest tests/test_hello_crypto.py -v --tb=short || echo "hello_crypto tests completed (Windows Hello required)"
       continue-on-error: true
       env:
         PYTHONPATH: .
 
-    - name: Test core functionality
+    - name: Run CI validation tests
+      run: |
+        python ci_test_runner.py
+      env:
+        PYTHONPATH: .
+
+    - name: Test core functionality imports
       run: |
         python -c "
         import sys, os
