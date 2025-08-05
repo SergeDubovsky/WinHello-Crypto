@@ -1,12 +1,15 @@
 import argparse
 import asyncio
 import hashlib
+import logging
 import os
 import secrets
+import sys
 from typing import Optional
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import padding, hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 
 from winrt.windows.security.credentials import (
@@ -16,11 +19,20 @@ from winrt.windows.security.credentials import (
 )
 from winrt.windows.storage.streams import DataWriter, DataReader
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+logger = logging.getLogger(__name__)
+
 # Constants
 KEY_NAME = "FileEncryptKey"
 CHALLENGE_MESSAGE = "FixedChallengeForKeyDerivation"
 AES_BLOCK_SIZE = 16
 AES_KEY_SIZE = 32  # 256 bits
+PBKDF2_ITERATIONS = 100000  # OWASP recommended minimum
 
 class WindowsHelloError(Exception):
     """Custom exception for Windows Hello operations."""
@@ -70,58 +82,91 @@ class FileEncryptor:
                 raise WindowsHelloError(f"Failed to extract signature bytes: {e}")
     
     async def derive_key_from_signature(self) -> bytes:
-        """Derive encryption key from Windows Hello signature."""
+        """Derive encryption key from Windows Hello signature with enhanced security."""
         try:
+            logger.info(f"Deriving encryption key using Windows Hello for key: {self.key_name}")
+            
             # Open the key
             open_result = await KeyCredentialManager.open_async(self.key_name)
             if open_result.status != KeyCredentialStatus.SUCCESS:
                 raise WindowsHelloError("Failed to open Windows Hello key")
 
-            # Prepare challenge buffer
+            # Prepare challenge buffer with additional entropy
             writer = DataWriter()
-            writer.write_string(self.challenge)
+            # Include key name and timestamp for additional security
+            challenge_with_context = f"{self.challenge}:{self.key_name}:{secrets.token_hex(16)}"
+            writer.write_string(challenge_with_context)
             challenge_buffer = writer.detach_buffer()
 
             # Sign with biometric authentication
+            logger.info("Requesting Windows Hello authentication...")
             sign_result = await open_result.credential.request_sign_async(challenge_buffer)
             if sign_result.status != KeyCredentialStatus.SUCCESS:
                 raise WindowsHelloError("Biometric authentication failed or was cancelled")
 
-            # Extract signature and derive key
+            # Extract signature and derive key with PBKDF2
             signature = await self._extract_signature_bytes(sign_result.result)
-            return hashlib.sha256(signature).digest()
+            
+            # Use PBKDF2 for more secure key derivation
+            salt = hashlib.sha256(f"{self.key_name}:{self.challenge}".encode()).digest()[:16]
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=AES_KEY_SIZE,
+                salt=salt,
+                iterations=PBKDF2_ITERATIONS,
+                backend=default_backend()
+            )
+            derived_key = kdf.derive(signature)
+            
+            logger.info("Successfully derived encryption key")
+            return derived_key
             
         except WindowsHelloError:
             raise
         except Exception as e:
+            logger.error(f"Failed to derive key: {e}")
             raise WindowsHelloError(f"Failed to derive key: {e}")
     
     def encrypt_data(self, data: bytes, key: bytes) -> bytes:
-        """Encrypt data using AES-256-CBC with proper PKCS7 padding."""
+        """Encrypt data using AES-256-CBC with proper PKCS7 padding and integrity protection."""
         if len(key) != AES_KEY_SIZE:
             raise ValueError(f"Key must be {AES_KEY_SIZE} bytes")
+        
+        logger.debug(f"Encrypting {len(data)} bytes of data")
         
         # Generate random IV
         iv = secrets.token_bytes(AES_BLOCK_SIZE)
         
+        # Calculate HMAC for integrity protection
+        hmac_key = hashlib.sha256(key + b"hmac").digest()[:32]
+        data_hmac = hashlib.sha256(hmac_key + data).digest()
+        
+        # Combine data with HMAC
+        data_with_hmac = data_hmac + data
+        
         # Pad data using PKCS7
         padder = padding.PKCS7(AES_BLOCK_SIZE * 8).padder()
-        padded_data = padder.update(data) + padder.finalize()
+        padded_data = padder.update(data_with_hmac) + padder.finalize()
         
         # Encrypt
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         encryptor = cipher.encryptor()
         ciphertext = encryptor.update(padded_data) + encryptor.finalize()
         
-        return iv + ciphertext
+        # Return IV + encrypted data
+        result = iv + ciphertext
+        logger.debug(f"Encryption completed, output size: {len(result)} bytes")
+        return result
     
     def decrypt_data(self, data: bytes, key: bytes) -> bytes:
-        """Decrypt data using AES-256-CBC and remove PKCS7 padding."""
+        """Decrypt data using AES-256-CBC with integrity verification."""
         if len(key) != AES_KEY_SIZE:
             raise ValueError(f"Key must be {AES_KEY_SIZE} bytes")
         
         if len(data) < AES_BLOCK_SIZE:
             raise ValueError("Invalid encrypted data: too short")
+        
+        logger.debug(f"Decrypting {len(data)} bytes of data")
         
         # Extract IV and ciphertext
         iv = data[:AES_BLOCK_SIZE]
@@ -134,8 +179,24 @@ class FileEncryptor:
         
         # Remove PKCS7 padding
         unpadder = padding.PKCS7(AES_BLOCK_SIZE * 8).unpadder()
-        plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+        data_with_hmac = unpadder.update(padded_plaintext) + unpadder.finalize()
         
+        # Verify HMAC integrity
+        if len(data_with_hmac) < 32:
+            raise ValueError("Invalid decrypted data: missing HMAC")
+            
+        stored_hmac = data_with_hmac[:32]
+        plaintext = data_with_hmac[32:]
+        
+        # Calculate expected HMAC
+        hmac_key = hashlib.sha256(key + b"hmac").digest()[:32]
+        expected_hmac = hashlib.sha256(hmac_key + plaintext).digest()
+        
+        # Constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(stored_hmac, expected_hmac):
+            raise ValueError("Data integrity check failed - file may be corrupted or tampered with")
+        
+        logger.debug(f"Decryption completed, output size: {len(plaintext)} bytes")
         return plaintext
     
     @staticmethod
@@ -215,8 +276,8 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python Hello-Crypto.py encrypt document.txt encrypted.bin
-  python Hello-Crypto.py decrypt encrypted.bin decrypted.txt
+  python hello_crypto.py encrypt document.txt encrypted.bin
+  python hello_crypto.py decrypt encrypted.bin decrypted.txt
         """
     )
     parser.add_argument(

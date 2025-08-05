@@ -1,6 +1,6 @@
 # WinHello-Crypto
 
-A secure file encryption tool that uses Windows Hello biometric authentication to derive encryption keys. This application provides hardware-backed security by leveraging Windows Hello's biometric authentication (fingerprint, face, or PIN) to encrypt and decrypt files using AES-256-CBC encryption.
+A secure file encryption tool and AWS credentials manager that uses Windows Hello biometric authentication to derive encryption keys. This application provides hardware-backed security by leveraging Windows Hello's biometric authentication (fingerprint, face, or PIN) to encrypt and decrypt files and securely store AWS credentials.
 
 ## Features
 
@@ -9,7 +9,19 @@ A secure file encryption tool that uses Windows Hello biometric authentication t
 - 🔑 **Hardware-Backed Security**: Encryption keys derived from Windows Hello signatures
 - 🧹 **Memory Safety**: Secure memory clearing of sensitive data
 - 📁 **File Operations**: Encrypt and decrypt any file type
+- ☁️ **AWS Credentials Manager**: Securely store and retrieve AWS credentials
+- 🔄 **AWS CLI Integration**: Seamless integration with AWS CLI credential_process
 - ⚡ **Async Operations**: Non-blocking file operations
+
+## Components
+
+### 1. File Encryption (`hello_crypto.py`)
+
+Basic file encryption and decryption using Windows Hello authentication.
+
+### 2. AWS Credentials Manager (`aws_hello_creds.py`)
+
+Specialized tool for managing AWS credentials with Windows Hello encryption, designed to replace certificate-based credential storage.
 
 ## Requirements
 
@@ -32,7 +44,103 @@ cd WinHello-Crypto
 pip install cryptography winrt
 ```
 
+## AWS Credentials Management
+
+### Adding AWS Credentials
+
+Store AWS credentials securely with Windows Hello encryption:
+
+```bash
+# Add long-term credentials
+python aws_hello_creds.py add-profile my-profile \
+    --access-key AKIA1234567890EXAMPLE \
+    --secret-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
+    --region us-east-1
+
+# Add temporary credentials (with session token)
+python aws_hello_creds.py add-profile temp-profile \
+    --access-key AKIA1234567890EXAMPLE \
+    --secret-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
+    --session-token IQoJb3JpZ2luX2VjEHoaCXVzLWVhc3QtMSJIMEYCIQD... \
+    --region us-west-2
+```
+
+### Using with AWS CLI
+
+After adding a profile, it's automatically configured in `~/.aws/config` with a `credential_process` entry:
+
+```ini
+[profile my-profile]
+credential_process = python "C:\Project\WinHello-Crypto\aws_hello_creds.py" get-credentials --profile my-profile
+region = us-east-1
+output = json
+```
+
+Then use normally with AWS CLI:
+
+```bash
+# List S3 buckets using the secure profile
+aws s3 ls --profile my-profile
+
+# Deploy CloudFormation stack
+aws cloudformation deploy --profile my-profile --template-file template.yaml --stack-name my-stack
+```
+
+### Managing Profiles
+
+```bash
+# List all encrypted profiles
+python aws_hello_creds.py list-profiles
+
+# Remove a profile
+python aws_hello_creds.py remove-profile old-profile
+
+# Test credential retrieval (outputs JSON for credential_process)
+python aws_hello_creds.py get-credentials --profile my-profile
+```
+
+### Migration from Certificate-based Credentials
+
+If you're currently using certificate-based credential encryption (like the PowerShell implementation), you can migrate:
+
+1. Extract your existing credentials
+2. Add them using the `add-profile` command
+3. Update your AWS config to use the new `credential_process`
+4. Test with `aws sts get-caller-identity --profile your-profile`
+
+### PowerShell Integration
+
+Use the included PowerShell module for seamless integration:
+
+```powershell
+# Import the module
+Import-Module .\AWSHelloCredentials.psm1
+
+# Add credentials using PowerShell
+Add-AWSHelloProfile -ProfileName "my-aws" -AccessKey "AKIA..." -SecretKey "xyz..." -Region "us-east-1"
+
+# List profiles
+Get-AWSHelloProfiles
+
+# Test a profile
+Test-AWSHelloProfile -ProfileName "my-aws"
+```
+
+### Windows Batch Integration
+
+Use the batch file for quick access:
+
+```cmd
+REM Add credentials
+aws-creds.bat add-profile my-aws --access-key AKIA... --secret-key xyz... --region us-east-1
+
+REM List profiles
+aws-creds.bat list-profiles
+```
+
 ## Usage
+
+### File Encryption
 
 ### Command Line Interface
 
@@ -41,28 +149,28 @@ The tool provides a simple command-line interface for encrypting and decrypting 
 #### Encrypt a file
 
 ```bash
-python Hello-Crypto.py encrypt input.txt encrypted.bin
+python hello_crypto.py encrypt input.txt encrypted.bin
 ```
 
 #### Decrypt a file
 
 ```bash
-python Hello-Crypto.py decrypt encrypted.bin decrypted.txt
+python hello_crypto.py decrypt encrypted.bin decrypted.txt
 ```
 
 ### Examples
 
 ```bash
 # Encrypt a document
-python Hello-Crypto.py encrypt document.pdf document.pdf.enc
+python hello_crypto.py encrypt document.pdf document.pdf.enc
 
 # Encrypt a folder (compress first)
 tar -czf backup.tar.gz important_folder/
-python Hello-Crypto.py encrypt backup.tar.gz backup.tar.gz.enc
+python hello_crypto.py encrypt backup.tar.gz backup.tar.gz.enc
 
 # Decrypt files
-python Hello-Crypto.py decrypt document.pdf.enc document.pdf
-python Hello-Crypto.py decrypt backup.tar.gz.enc backup.tar.gz
+python hello_crypto.py decrypt document.pdf.enc document.pdf
+python hello_crypto.py decrypt backup.tar.gz.enc backup.tar.gz
 ```
 
 ## How It Works
@@ -98,7 +206,7 @@ The application includes comprehensive error handling for:
 The main class that handles all encryption operations:
 
 ```python
-from Hello-Crypto import FileEncryptor
+from hello_crypto import FileEncryptor
 
 encryptor = FileEncryptor()
 
@@ -155,11 +263,30 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Security Considerations
 
+### General Security
+
 - This tool is designed for personal use and file protection
 - The security depends on the integrity of Windows Hello and the underlying hardware
 - Always keep backups of important files before encryption
 - Test the decryption process before relying on encrypted files
 - Consider the implications of hardware failure or Windows reinstallation
+
+### AWS Credentials Security
+
+- **Hardware-Backed Storage**: AWS credentials are encrypted using keys derived from Windows Hello
+- **No Plaintext Storage**: Credentials are never stored in plaintext on disk
+- **Biometric Gating**: Each credential access requires biometric authentication
+- **Isolated Storage**: Credentials are stored separately from AWS config files
+- **Key Rotation**: Easily update credentials without changing configuration
+- **Session Support**: Supports both long-term and temporary (STS) credentials
+
+### Best Practices
+
+- Regularly rotate your AWS access keys
+- Use temporary credentials (STS) when possible
+- Monitor AWS CloudTrail for unexpected API calls
+- Test credential retrieval regularly to ensure Windows Hello is working
+- Keep the Python environment and dependencies updated
 
 ## Acknowledgments
 
