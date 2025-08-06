@@ -139,8 +139,19 @@ def validate_file_path(file_path: str, operation: str = "access") -> Path:
     Raises:
         ValidationError: If path is invalid or unsafe
     """
+    raw_path = Path(file_path)
+
+    # Inspect raw path for traversal attempts before resolving
+    if any(part == ".." for part in raw_path.parts):
+        audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+            'error': 'path_traversal_attempt',
+            'path': file_path,
+            'operation': operation
+        })
+        raise ValidationError("Path traversal not allowed")
+
     try:
-        path = Path(file_path).resolve()
+        path = raw_path.resolve()
     except (OSError, ValueError) as e:
         audit_log(SECURITY_EVENTS['VALIDATION_ERROR'], {
             'error': 'invalid_path',
@@ -148,9 +159,23 @@ def validate_file_path(file_path: str, operation: str = "access") -> Path:
             'operation': operation
         })
         raise ValidationError(f"Invalid file path: {e}")
-    
-    # Check for path traversal attempts
-    if '..' in str(path) or str(path).startswith('/'):
+
+    base_dir = Path.cwd().resolve()
+
+    # Disallow absolute paths outside the allowed base directory
+    if raw_path.is_absolute():
+        try:
+            path.relative_to(base_dir)
+        except ValueError:
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'error': 'path_traversal_attempt',
+                'path': str(path),
+                'operation': operation
+            })
+            raise ValidationError("Absolute paths outside the allowed directory are not permitted")
+
+    # Ensure resolved path remains within the allowed directory
+    if not path.is_relative_to(base_dir):
         audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
             'error': 'path_traversal_attempt',
             'path': str(path),
@@ -246,7 +271,9 @@ def secure_memory_clear(data: bytearray) -> None:
             # Use Windows SecureZeroMemory if available
             kernel32 = ctypes.windll.kernel32
             kernel32.RtlSecureZeroMemory.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-            kernel32.RtlSecureZeroMemory(ctypes.addressof(data), len(data))
+            address = ctypes.addressof(ctypes.c_char.from_buffer(data))
+            # Convert bytearray to ctypes buffer to obtain memory address
+            kernel32.RtlSecureZeroMemory(address, len(data))
     except Exception:
         # Fallback to multiple overwrites
         for _ in range(3):

@@ -12,9 +12,13 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import ctypes
 
 # Provide minimal stubs for Windows-specific ctypes attributes in non-Windows environments
-ctypes.windll = MagicMock()
-ctypes.windll.user32 = MagicMock()
-ctypes.windll.kernel32 = MagicMock()
+if not hasattr(ctypes, "windll"):
+    ctypes.windll = MagicMock()
+if hasattr(ctypes, "windll"):
+    if not hasattr(ctypes.windll, "user32"):
+        ctypes.windll.user32 = MagicMock()
+    if not hasattr(ctypes.windll, "kernel32"):
+        ctypes.windll.kernel32 = MagicMock()
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -332,6 +336,31 @@ region = us-east-1
         assert "region = us-east-2" in config_content
         assert "old_command" not in config_content
         assert "[profile other-profile]" in config_content  # Should preserve other profiles
+
+    @pytest.mark.asyncio
+    async def test_update_aws_config_preserves_comments_and_no_duplicates(self, manager_with_temp_config):
+        """Ensure comments are preserved and keys aren't duplicated."""
+        manager = manager_with_temp_config
+        manager._ensure_directories()
+
+        config_file = manager.aws_dir / "config"
+        config_file.write_text(
+            """[profile test]
+region = us-west-2
+# important comment
+output = json
+""",
+            encoding="utf-8",
+        )
+
+        await manager._update_aws_config("test", "us-east-1")
+        await manager._update_aws_config("test", "us-east-1")
+
+        content = config_file.read_text()
+        assert "# important comment" in content
+        assert content.count("credential_process") == 1
+        assert content.count("region = us-east-1") == 1
+        assert content.count("output = json") == 1
 
 if __name__ == "__main__":
     pytest.main([__file__])
