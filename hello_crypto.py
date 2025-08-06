@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 
@@ -53,7 +53,8 @@ from security_utils import (
     sanitize_error_message
 )
 from security_config import (
-    AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE, AES_KEY_SIZE, PBKDF2_ITERATIONS,
+    AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE, AES_KEY_SIZE,
+    ARGON2_TIME_COST, ARGON2_MEMORY_COST, ARGON2_PARALLELISM,
     KEY_NAME_FILE, CHALLENGE_MESSAGE, SECURITY_EVENTS
 )
 
@@ -331,19 +332,19 @@ class FileEncryptor:
                 })
                 raise WindowsHelloError("Biometric authentication failed or was cancelled")
 
-            # Extract signature and derive key with PBKDF2
+            # Extract signature and derive key with Argon2id
             signature = await self._extract_signature_bytes(sign_result.result)
-            
+
             # Enhanced salt generation with multiple sources (deterministic for key derivation)
             salt_material = f"{self.key_name}:{self.challenge}:{os.getenv('COMPUTERNAME', '')}"
             salt = hashlib.sha256(salt_material.encode()).digest()[:16]
-            
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=AES_KEY_SIZE,
+
+            kdf = Argon2id(
                 salt=salt,
-                iterations=PBKDF2_ITERATIONS,
-                backend=default_backend()
+                length=AES_KEY_SIZE,
+                iterations=ARGON2_TIME_COST,
+                lanes=ARGON2_PARALLELISM,
+                memory_cost=ARGON2_MEMORY_COST,
             )
             derived_key = kdf.derive(signature)
             

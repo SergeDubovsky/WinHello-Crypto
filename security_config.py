@@ -19,8 +19,13 @@ LOCKOUT_DURATION = 900   # 15 minutes in seconds
 # Cryptographic constants
 AES_GCM_NONCE_SIZE = 12  # 96-bit nonce for AES-GCM
 AES_GCM_TAG_SIZE = 16    # 128-bit authentication tag
+AES_BLOCK_SIZE = 16
 AES_KEY_SIZE = 32  # 256 bits
-PBKDF2_ITERATIONS = 100000  # OWASP recommended minimum
+# Argon2id KDF parameters (OWASP recommended)
+ARGON2_TIME_COST = 2
+ARGON2_MEMORY_COST = 64 * 1024  # 64MB
+ARGON2_PARALLELISM = 1
+HMAC_SIZE = 32  # SHA-256 output size
 
 # Windows Hello constants
 KEY_NAME_FILE = "FileEncryptKey"
@@ -90,9 +95,13 @@ def get_security_config() -> Dict[str, Any]:
         },
         'crypto': {
             'aes_key_size': AES_KEY_SIZE,
+            'aes_block_size': AES_BLOCK_SIZE,
             'aes_gcm_nonce_size': AES_GCM_NONCE_SIZE,
             'aes_gcm_tag_size': AES_GCM_TAG_SIZE,
-            'pbkdf2_iterations': PBKDF2_ITERATIONS
+            'argon2_time_cost': ARGON2_TIME_COST,
+            'argon2_memory_cost': ARGON2_MEMORY_COST,
+            'argon2_parallelism': ARGON2_PARALLELISM,
+            'hmac_size': HMAC_SIZE
         },
         'aws_validation': {
             'patterns': AWS_PATTERNS,
