@@ -345,6 +345,62 @@ class AWSCredentialManager:
             logger.error(f"Unexpected error retrieving credentials for '{profile_name}': {sanitize_error_message(e, 'credential retrieval')}")
             raise WindowsHelloError(f"Failed to retrieve credentials: {sanitize_error_message(e, 'credential retrieval')}")
         
+    async def _get_credentials_from_encrypted_file(self, encrypted_file_path: str) -> Dict[str, Union[str, float]]:
+        """Retrieve and decrypt credentials from an encrypted profile file."""
+        try:
+            encrypted_path = Path(encrypted_file_path)
+            if not encrypted_path.exists():
+                raise FileNotFoundError(f"Encrypted profile file not found: {encrypted_path}")
+                
+            logger.info(f"Retrieving credentials from encrypted file: {encrypted_path}")
+            
+            # Copy to temporary location to work around security constraints
+            temp_encrypted = Path.cwd() / f"temp_encrypted_{encrypted_path.name}"
+            temp_decrypted = Path.cwd() / "temp_decrypted_profile.json"
+            
+            try:
+                import shutil
+                shutil.copy2(str(encrypted_path), str(temp_encrypted))
+                
+                # Decrypt the profile file
+                await self.encryptor.decrypt_file(str(temp_encrypted), str(temp_decrypted))
+                
+                # Read the decrypted profile data
+                profile_data = json.loads(temp_decrypted.read_text(encoding="utf-8"))
+                
+                # Validate profile data structure
+                required_fields = ["profile_name", "config", "created_at", "version"]
+                for field in required_fields:
+                    if field not in profile_data:
+                        raise Exception(f"Invalid encrypted profile file: missing '{field}' field")
+                        
+                profile_config = profile_data["config"]
+                
+                # Extract credentials from config
+                credentials = {}
+                if "aws_access_key_id" in profile_config:
+                    credentials["aws_access_key_id"] = profile_config["aws_access_key_id"]
+                if "aws_secret_access_key" in profile_config:
+                    credentials["aws_secret_access_key"] = profile_config["aws_secret_access_key"]
+                if "aws_session_token" in profile_config:
+                    credentials["aws_session_token"] = profile_config["aws_session_token"]
+                    
+                if not credentials:
+                    raise Exception("No credentials found in encrypted profile file")
+                    
+                return credentials
+                
+            finally:
+                # Clean up temp files
+                if temp_decrypted.exists():
+                    temp_decrypted.unlink()
+                if temp_encrypted.exists():
+                    temp_encrypted.unlink()
+                    
+        except Exception as e:
+            logger.error(f"Error retrieving credentials from encrypted file: {e}")
+            raise Exception(f"Failed to retrieve credentials from encrypted file: {sanitize_error_message(e, 'encrypted file retrieval')}")
+        
     async def list_profiles(self) -> None:
         """List all available encrypted profiles."""
         if not self.credentials_dir.exists():
@@ -668,6 +724,281 @@ class AWSCredentialManager:
             print(f"❌ Restore failed: {sanitize_error_message(e, 'credential restore')}")
             raise
 
+    async def encrypt_aws_profile(self, profile_name: str, output_file: Optional[str] = None, delete_plain: bool = False) -> None:
+        """Encrypt AWS profile from ~/.aws/config file."""
+        try:
+            self._validate_profile_name(profile_name)
+            config_file = Path.home() / ".aws" / "config"
+            
+            if not config_file.exists():
+                print(f"❌ AWS config file not found: {config_file}")
+                return
+                
+            # Read the AWS config file
+            config = configparser.RawConfigParser()
+            config.optionxform = str
+            config.read(config_file)
+            
+            # Look for the profile section
+            section_name = f"profile {profile_name}"
+            if profile_name == "default":
+                section_name = "default"
+                
+            if not config.has_section(section_name):
+                print(f"❌ Profile '{profile_name}' not found in AWS config")
+                available_profiles = []
+                for section in config.sections():
+                    if section.startswith("profile "):
+                        available_profiles.append(section[8:])  # Remove "profile " prefix
+                    elif section == "default":
+                        available_profiles.append("default")
+                        
+                if available_profiles:
+                    print(f"Available profiles: {', '.join(available_profiles)}")
+                return
+                
+            # Extract profile configuration
+            profile_config = dict(config.items(section_name))
+            
+            # Create the encrypted profile data
+            encrypted_profile = {
+                "profile_name": profile_name,
+                "config": profile_config,
+                "created_at": datetime.now().isoformat(),
+                "version": "1.0"
+            }
+            
+            # Determine output file and path
+            if not output_file:
+                # Default to .aws/hello-encrypted directory in user's home
+                aws_dir = Path.home() / ".aws"
+                encrypted_dir = aws_dir / "hello-encrypted"
+                encrypted_dir.mkdir(exist_ok=True)
+                final_output_file = encrypted_dir / f"{profile_name}.enc"
+                
+                # Use a temporary file in current directory for encryption due to security constraints
+                temp_output_file = Path.cwd() / f"temp_{profile_name}.enc"
+                output_file = temp_output_file
+                move_to_final = True
+            else:
+                final_output_file = Path(output_file)
+                move_to_final = False
+            
+            output_path = Path(output_file)
+            
+            # Create the profile JSON
+            profile_json = json.dumps(encrypted_profile, indent=2)
+            
+            # Write temp file and encrypt it
+            temp_file = Path.cwd() / "temp_profile.json"
+            try:
+                temp_file.write_text(profile_json, encoding="utf-8")
+                await self.encryptor.encrypt_file(str(temp_file), str(output_path))
+                
+                # Move file to final location if needed
+                if move_to_final:
+                    try:
+                        import shutil
+                        shutil.move(str(output_path), str(final_output_file))
+                        output_path = final_output_file
+                        print(f"✅ Profile '{profile_name}' encrypted successfully")
+                        print(f"📁 Encrypted profile saved to: {output_path.absolute()}")
+                    except Exception as move_error:
+                        print(f"⚠️  Warning: Failed to move encrypted file to final location: {move_error}")
+                        print(f"📁 Encrypted profile saved to: {output_path.absolute()}")
+                else:
+                    print(f"✅ Profile '{profile_name}' encrypted successfully")
+                    print(f"📁 Encrypted profile saved to: {output_path.absolute()}")
+                
+                # Add encrypted profile reference to AWS config
+                encrypted_section_name = f"profile {profile_name}-encrypted"
+                if profile_name == "default":
+                    encrypted_section_name = "default-encrypted"
+                
+                try:
+                    # Add the encrypted profile section to config
+                    if not config.has_section(encrypted_section_name):
+                        config.add_section(encrypted_section_name)
+                    
+                    # Set up credential_process to use our tool for decryption
+                    config.set(encrypted_section_name, 'credential_process', f'python "{Path(__file__).absolute()}" get-credentials --profile {profile_name}-encrypted')
+                    
+                    # Copy region and output format from original profile if they exist
+                    if 'region' in profile_config:
+                        config.set(encrypted_section_name, 'region', profile_config['region'])
+                    else:
+                        config.set(encrypted_section_name, 'region', 'us-east-1')  # Default region
+                    
+                    if 'output' in profile_config:
+                        config.set(encrypted_section_name, 'output', profile_config['output'])
+                    else:
+                        config.set(encrypted_section_name, 'output', 'json')  # Default output format
+                    
+                    # Store metadata as comments or separate fields for reference
+                    config.set(encrypted_section_name, '# winhello_encrypted_file', str(output_path.absolute()))
+                    config.set(encrypted_section_name, '# winhello_original_profile', profile_name)
+                    
+                    # Write the updated config back
+                    with open(config_file, 'w') as f:
+                        config.write(f)
+                    
+                    print(f"🔗 Added encrypted profile reference '{encrypted_section_name}' to AWS config")
+                    print(f"💡 You can now use: aws s3 ls --profile {profile_name}-encrypted")
+                    
+                except Exception as config_error:
+                    print(f"⚠️  Warning: Failed to add encrypted profile reference: {sanitize_error_message(config_error, 'config update')}")
+                    audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                        'operation': 'config_update',
+                        'profile_name': profile_name,
+                        'error': str(config_error)[:100]
+                    })
+                
+                # Delete plain text profile if requested
+                if delete_plain:
+                    try:
+                        # Remove the profile section from the config
+                        config.remove_section(section_name)
+                        
+                        # Write the updated config back
+                        with open(config_file, 'w') as f:
+                            config.write(f)
+                        
+                        print(f"🗑️  Plain text profile '{profile_name}' removed from AWS config")
+                        
+                        # Audit the deletion
+                        audit_log(SECURITY_EVENTS['FILE_DELETE'], {
+                            'operation': 'profile_deletion',
+                            'profile_name': profile_name,
+                            'config_file': str(config_file),
+                            'success': True
+                        })
+                        
+                    except Exception as delete_error:
+                        print(f"⚠️  Warning: Failed to delete plain text profile: {sanitize_error_message(delete_error, 'profile deletion')}")
+                        audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                            'operation': 'profile_deletion',
+                            'profile_name': profile_name,
+                            'error': str(delete_error)[:100]
+                        })
+                
+                # Audit the encryption
+                audit_log(SECURITY_EVENTS['FILE_ENCRYPT'], {
+                    'operation': 'profile_encryption',
+                    'profile_name': profile_name,
+                    'output_file': str(output_path),
+                    'delete_plain': delete_plain,
+                    'success': True
+                })
+                
+            finally:
+                # Clean up temp file
+                if temp_file.exists():
+                    temp_file.unlink()
+                    
+        except Exception as e:
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'profile_encryption', 
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
+            print(f"❌ Profile encryption failed: {sanitize_error_message(e, 'profile encryption')}")
+            raise
+
+    async def decrypt_aws_profile(self, encrypted_file: str, profile_name_override: Optional[str] = None) -> None:
+        """Decrypt AWS profile and add it to ~/.aws/config file."""
+        try:
+            encrypted_path = Path(encrypted_file)
+            if not encrypted_path.exists():
+                print(f"❌ Encrypted profile file not found: {encrypted_path}")
+                return
+                
+            # Decrypt the profile file
+            temp_decrypted = Path.cwd() / "temp_decrypted_profile.json"
+            try:
+                await self.encryptor.decrypt_file(str(encrypted_path), str(temp_decrypted))
+                
+                # Read the decrypted profile data
+                profile_data = json.loads(temp_decrypted.read_text(encoding="utf-8"))
+                
+                # Validate profile data structure
+                required_fields = ["profile_name", "config", "created_at", "version"]
+                for field in required_fields:
+                    if field not in profile_data:
+                        print(f"❌ Invalid encrypted profile file: missing '{field}' field")
+                        return
+                        
+                profile_name = profile_name_override or profile_data["profile_name"]
+                self._validate_profile_name(profile_name)
+                profile_config = profile_data["config"]
+                
+                # Ensure AWS config directory exists
+                aws_config_dir = Path.home() / ".aws"
+                aws_config_dir.mkdir(exist_ok=True)
+                config_file = aws_config_dir / "config"
+                
+                # Read existing config or create new one
+                config = configparser.RawConfigParser()
+                config.optionxform = str
+                
+                if config_file.exists():
+                    config.read(config_file)
+                    
+                # Determine section name
+                section_name = f"profile {profile_name}" if profile_name != "default" else "default"
+                
+                # Check if profile already exists
+                if config.has_section(section_name):
+                    response = input(f"⚠️  Profile '{profile_name}' already exists. Overwrite? (y/N): ")
+                    if response.lower() not in ["y", "yes"]:
+                        print("❌ Operation cancelled")
+                        return
+                else:
+                    config.add_section(section_name)
+                    
+                # Update the profile configuration
+                for key, value in profile_config.items():
+                    config.set(section_name, key, value)
+                    
+                # Write the updated config
+                with config_file.open("w", encoding="utf-8") as f:
+                    config.write(f)
+                    
+                print(f"✅ Profile '{profile_name}' decrypted and added to AWS config")
+                print(f"📁 Updated AWS config: {config_file}")
+                print(f"🕒 Original profile created: {profile_data['created_at']}")
+                
+                # Show profile configuration
+                print(f"\n📋 Profile configuration:")
+                for key, value in profile_config.items():
+                    # Mask sensitive values
+                    if any(sensitive in key.lower() for sensitive in ["key", "secret", "token", "password"]):
+                        display_value = "*" * min(len(str(value)), 8) if value else ""
+                    else:
+                        display_value = str(value)
+                    print(f"   {key}: {display_value}")
+                    
+                # Audit the decryption
+                audit_log(SECURITY_EVENTS['FILE_DECRYPT'], {
+                    'operation': 'profile_decryption',
+                    'profile_name': profile_name,
+                    'encrypted_file': str(encrypted_path),
+                    'success': True
+                })
+                
+            finally:
+                # Clean up temp file
+                if temp_decrypted.exists():
+                    temp_decrypted.unlink()
+                    
+        except Exception as e:
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'profile_decryption',
+                'encrypted_file': encrypted_file,
+                'error': str(e)[:100]
+            })
+            print(f"❌ Profile decryption failed: {sanitize_error_message(e, 'profile decryption')}")
+            raise
+
     def _detect_shell(self) -> str:
         """Detect the current shell environment."""
         # Check environment variables that indicate the shell
@@ -828,7 +1159,24 @@ async def output_credentials_json(profile_name: str) -> None:
     manager = AWSCredentialManager()
     
     try:
-        credentials = await manager.get_credentials(profile_name)
+        # Check if this is an encrypted profile request
+        if profile_name.endswith('-encrypted'):
+            # Extract the original profile name
+            original_profile = profile_name[:-10]  # Remove '-encrypted' suffix
+            
+            # Look for the encrypted file in the ~/.aws/hello-encrypted directory
+            aws_dir = Path.home() / ".aws"
+            encrypted_dir = aws_dir / "hello-encrypted"
+            encrypted_file = encrypted_dir / f"{original_profile}.enc"
+            
+            if not encrypted_file.exists():
+                raise Exception(f"Encrypted file not found: {encrypted_file}")
+            
+            # Decrypt and get credentials from encrypted file
+            credentials = await manager._get_credentials_from_encrypted_file(str(encrypted_file))
+        else:
+            # Use normal profile lookup
+            credentials = await manager.get_credentials(profile_name)
         
         # Format for AWS credential_process
         output = {
@@ -915,6 +1263,16 @@ Credential Rotation Examples:
   # Restore from backup
   python aws-hello-creds.py restore-backup my-profile 20250806_143000
 
+Profile Management:
+  # Encrypt an existing AWS profile from ~/.aws/config (saves to ~/.aws/hello-encrypted/)
+  python aws-hello-creds.py encrypt-profile my-profile
+  python aws-hello-creds.py encrypt-profile my-profile --output my-secure-profile.enc
+  python aws-hello-creds.py encrypt-profile my-profile --delete-plain  # Remove from config after encryption
+  
+  # Decrypt and restore profile to ~/.aws/config
+  python aws-hello-creds.py decrypt-profile ~/.aws/hello-encrypted/my-profile.enc
+  python aws-hello-creds.py decrypt-profile my-secure-profile.enc --profile new-profile-name
+
 AWS CLI Integration:
   After adding a profile, it will be automatically configured in ~/.aws/config
   You can then use it with: aws s3 ls --profile my-profile
@@ -997,6 +1355,17 @@ Security Features:
     restore_parser.add_argument("profile_name", help="Profile name to restore")
     restore_parser.add_argument("backup_timestamp", help="Backup timestamp (format: YYYYMMDD_HHMMSS)")
     
+    # Encrypt AWS profile command
+    encrypt_profile_parser = subparsers.add_parser("encrypt-profile", help="Encrypt an AWS profile from ~/.aws/config")
+    encrypt_profile_parser.add_argument("profile_name", help="Profile name to encrypt")
+    encrypt_profile_parser.add_argument("--output", help="Output file for encrypted profile (default: ~/.aws/hello-encrypted/<profile>.enc)")
+    encrypt_profile_parser.add_argument("--delete-plain", action="store_true", help="Delete the plain text profile from AWS config after successful encryption")
+    
+    # Decrypt AWS profile command 
+    decrypt_profile_parser = subparsers.add_parser("decrypt-profile", help="Decrypt and add AWS profile to ~/.aws/config")
+    decrypt_profile_parser.add_argument("encrypted_file", help="Path to encrypted profile file")
+    decrypt_profile_parser.add_argument("--profile", help="Override profile name (default: use name from encrypted file)")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -1047,6 +1416,12 @@ Security Features:
             
         elif args.command == "restore-backup":
             await manager.restore_from_backup(args.profile_name, args.backup_timestamp)
+            
+        elif args.command == "encrypt-profile":
+            await manager.encrypt_aws_profile(args.profile_name, args.output, args.delete_plain)
+            
+        elif args.command == "decrypt-profile":
+            await manager.decrypt_aws_profile(args.encrypted_file, args.profile)
             
     except WindowsHelloError as e:
         print(f"❌ Windows Hello Error: {e}", file=sys.stderr)

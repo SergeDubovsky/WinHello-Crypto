@@ -59,6 +59,7 @@ SECURITY_EVENTS = {
     'AUTH_FAILURE': 'authentication_failure',
     'FILE_ENCRYPT': 'file_encryption',
     'FILE_DECRYPT': 'file_decryption',
+    'FILE_DELETE': 'file_deletion',
     'CRED_STORE': 'credential_storage',
     'CRED_RETRIEVE': 'credential_retrieval',
     'RATE_LIMIT': 'rate_limit_exceeded',

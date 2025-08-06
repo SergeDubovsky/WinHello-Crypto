@@ -88,3 +88,42 @@ def disable_logging():
     logging.disable(logging.CRITICAL)
     yield
     logging.disable(logging.NOTSET)
+
+@pytest.fixture(autouse=True)
+def cleanup_temp_files():
+    """Automatically clean up temporary files after each test."""
+    import glob
+    import os
+    from pathlib import Path
+    
+    # Track files before test
+    base_dir = Path.cwd()
+    
+    yield  # Run the test
+    
+    # Clean up temporary files after test
+    patterns = [
+        "tmp*.txt",
+        "temp*.txt", 
+        "test_temp*",
+        "temp_*.enc",
+        "temp_*.json",
+        "temp_profile.json",
+        "temp_decrypted_profile.json"
+    ]
+    
+    for pattern in patterns:
+        for file_path in glob.glob(str(base_dir / pattern)):
+            try:
+                os.unlink(file_path)
+            except (PermissionError, OSError, FileNotFoundError):
+                pass  # File might be in use or already deleted
+    
+    # Clean up test_temp directory if it exists
+    test_temp_dir = base_dir / "test_temp"
+    if test_temp_dir.exists():
+        try:
+            import shutil
+            shutil.rmtree(test_temp_dir)
+        except (PermissionError, OSError):
+            pass
