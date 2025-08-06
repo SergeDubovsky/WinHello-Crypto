@@ -72,6 +72,9 @@ $ aws s3 ls --profile my-secure-profile
 - 🌐 **Environment Variable Support**: Set AWS credentials as environment variables for shell sessions
 - 🖥️ **Multi-Shell Support**: Automatic detection of PowerShell, CMD, and Bash shells
 - 🎯 **Enhanced UX**: Automatic Windows Hello dialog activation for seamless biometric authentication
+- 🔄 **Credential Rotation**: Comprehensive rotation system with automatic backups and rollback support
+- 📅 **Backup Management**: Encrypted backup storage with timestamped restore points
+- 🔍 **Rotation Monitoring**: Automatic detection of aging credentials with rotation recommendations
 - ⚡ **Async Operations**: Non-blocking file operations
 
 ## Components
@@ -209,6 +212,64 @@ python aws_hello_creds.py set-env my-profile --shell powershell
 python aws_hello_creds.py set-env my-profile --shell cmd
 python aws_hello_creds.py set-env my-profile --shell bash
 ```
+
+### Credential Rotation
+
+WinHello-Crypto includes comprehensive credential rotation capabilities for enhanced security:
+
+#### Check Rotation Status
+
+```bash
+# Check if credentials need rotation
+python aws_hello_creds.py check-rotation my-profile
+```
+
+This command analyzes credential age and provides recommendations:
+- **Session tokens**: Warns after 30 minutes (typical expiration: 1-12 hours)
+- **Long-term credentials**: Warns after 90 days (security best practice)
+
+#### Rotate Credentials
+
+```bash
+# Auto-rotate (automatically detects credential type)
+python aws_hello_creds.py rotate-credentials my-profile
+
+# Manual rotation with new credentials
+python aws_hello_creds.py rotate-credentials my-profile --type manual \
+  --access-key AKIA1234567890EXAMPLE \
+  --secret-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# Rotate temporary credentials
+python aws_hello_creds.py rotate-credentials my-profile --type manual \
+  --access-key AKIA... --secret-key SECRET... --session-token TOKEN...
+```
+
+**Rotation Types:**
+- `auto`: Automatically detects whether credentials are temporary or long-term
+- `manual`: Use provided new credentials immediately
+- `temporary`: Guidance for rotating session tokens
+- `access-key`: Guidance for rotating long-term access keys
+
+#### Backup Management
+
+All credential rotations automatically create backups before making changes:
+
+```bash
+# List all available backups
+python aws_hello_creds.py list-backups
+
+# List backups for specific profile
+python aws_hello_creds.py list-backups --profile my-profile
+
+# Restore from backup (format: YYYYMMDD_HHMMSS)
+python aws_hello_creds.py restore-backup my-profile 20250806_143000
+```
+
+**Security Features:**
+- 🔐 **Encrypted Backups**: All backups use the same Windows Hello encryption
+- 📅 **Timestamped**: Each backup includes creation timestamp and metadata
+- 🔄 **Rollback Support**: Easy restoration from any backup point
+- 🛡️ **Audit Trail**: All rotation activities are logged for compliance
 
 ### Windows Batch Integration
 

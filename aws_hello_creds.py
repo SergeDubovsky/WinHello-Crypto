@@ -12,8 +12,10 @@ import logging
 import os
 import re
 import sys
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List, Tuple
 
 from hello_crypto import FileEncryptor, WindowsHelloError
 from security_utils import (
@@ -365,6 +367,291 @@ class AWSCredentialManager:
         print(f"✅ Encrypted credentials for profile '{profile_name}' removed.")
         print(f"Note: You may want to manually remove the profile from ~/.aws/config")
 
+    async def _backup_credentials(self, profile_name: str, credentials: Dict[str, Union[str, float]]) -> None:
+        """Create a backup of current credentials before rotation."""
+        backup_dir = self.credentials_dir / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = backup_dir / f"{profile_name}_{timestamp}.enc"
+        
+        # Add backup metadata
+        backup_data = {
+            **credentials,
+            "backup_created_at": time.time(),
+            "backup_reason": "credential_rotation",
+            "original_profile": profile_name
+        }
+        
+        json_data = json.dumps(backup_data, indent=2).encode('utf-8')
+        
+        # Encrypt and store backup
+        key = await self.encryptor.derive_key_from_signature()
+        encrypted_data = self.encryptor.encrypt_data(json_data, key)
+        key_array = bytearray(key)
+        
+        try:
+            with open(backup_file, "wb") as f:
+                f.write(encrypted_data)
+            logger.info(f"Backup created for profile '{profile_name}' at {backup_file}")
+        finally:
+            secure_memory_clear(key_array)
+
+    async def _check_credential_age(self, profile_name: str) -> Tuple[bool, Optional[float], Optional[str]]:
+        """Check if credentials are approaching expiration or are old."""
+        try:
+            credentials = await self.get_credentials(profile_name)
+            created_at = credentials.get('created_at', 0)
+            session_token = credentials.get('aws_session_token')
+            
+            if session_token:
+                # Session tokens typically expire in 1-12 hours
+                # Check if they're older than 30 minutes for warning
+                age_hours = (time.time() - created_at) / 3600
+                if age_hours > 0.5:  # 30 minutes
+                    return True, age_hours, "session_token_aging"
+            else:
+                # Long-term credentials - warn if older than 90 days
+                age_days = (time.time() - created_at) / 86400
+                if age_days > 90:
+                    return True, age_days, "long_term_aging"
+                    
+            return False, None, None
+            
+        except Exception as e:
+            logger.warning(f"Could not check credential age for '{profile_name}': {e}")
+            return False, None, None
+
+    async def check_rotation_needed(self, profile_name: str) -> None:
+        """Check if credentials need rotation and provide recommendations."""
+        try:
+            self._validate_profile_name(profile_name)
+            
+            needs_rotation, age, reason = await self._check_credential_age(profile_name)
+            
+            print(f"🔍 Checking rotation status for profile '{profile_name}'...")
+            
+            if not needs_rotation:
+                print(f"✅ Credentials are fresh - no rotation needed")
+                return
+                
+            if reason == "session_token_aging":
+                print(f"⚠️  Session token is {age:.1f} hours old")
+                print(f"💡 Consider rotating temporary credentials if they're not working")
+                print(f"   Use: python aws_hello_creds.py rotate-credentials {profile_name} --type temporary")
+            elif reason == "long_term_aging":
+                print(f"⚠️  Long-term credentials are {age:.0f} days old")
+                print(f"💡 Consider rotating for security best practices")
+                print(f"   Use: python aws_hello_creds.py rotate-credentials {profile_name} --type access-key")
+                
+            # Audit the check
+            audit_log(SECURITY_EVENTS['CRED_RETRIEVE'], {
+                'operation': 'rotation_check',
+                'profile_name': profile_name,
+                'needs_rotation': needs_rotation,
+                'age': age,
+                'reason': reason
+            })
+            
+        except Exception as e:
+            print(f"❌ Error checking rotation status: {sanitize_error_message(e, 'rotation check')}")
+            raise
+
+    async def rotate_credentials(self, profile_name: str, rotation_type: str = "auto", 
+                               new_access_key: Optional[str] = None, 
+                               new_secret_key: Optional[str] = None,
+                               new_session_token: Optional[str] = None) -> None:
+        """Rotate AWS credentials with backup of old credentials."""
+        try:
+            self._validate_profile_name(profile_name)
+            
+            print(f"🔄 Starting credential rotation for profile '{profile_name}'...")
+            
+            # Get current credentials for backup
+            try:
+                current_creds = await self.get_credentials(profile_name)
+                print(f"📦 Creating backup of current credentials...")
+                await self._backup_credentials(profile_name, current_creds)
+            except Exception as e:
+                print(f"⚠️  Could not backup current credentials: {e}")
+                response = input("Continue rotation without backup? (y/N): ")
+                if response.lower() != 'y':
+                    print("❌ Rotation cancelled")
+                    return
+            
+            # Determine rotation type
+            if rotation_type == "auto":
+                has_session = current_creds.get('aws_session_token') is not None
+                rotation_type = "temporary" if has_session else "access-key"
+                print(f"🤖 Auto-detected rotation type: {rotation_type}")
+            
+            if rotation_type == "manual":
+                if not all([new_access_key, new_secret_key]):
+                    raise ValueError("Manual rotation requires --access-key and --secret-key")
+                
+                print(f"🔧 Performing manual credential rotation...")
+                
+                # Validate new credentials
+                self._validate_aws_credentials(new_access_key, new_secret_key, new_session_token)
+                
+                # Update with new credentials, preserving region
+                region = current_creds.get('region')
+                await self.add_profile(
+                    profile_name, 
+                    new_access_key, 
+                    new_secret_key, 
+                    new_session_token,
+                    region
+                )
+                
+            elif rotation_type == "temporary":
+                print(f"💡 For temporary credential rotation, you'll need to:")
+                print(f"   1. Get new temporary credentials from AWS console or CLI")
+                print(f"   2. Run: python aws_hello_creds.py rotate-credentials {profile_name} --type manual \\")
+                print(f"           --access-key YOUR_NEW_KEY --secret-key YOUR_NEW_SECRET --session-token YOUR_TOKEN")
+                
+            elif rotation_type == "access-key":
+                print(f"💡 For access key rotation, you'll need to:")
+                print(f"   1. Create new access keys in AWS IAM console")
+                print(f"   2. Run: python aws_hello_creds.py rotate-credentials {profile_name} --type manual \\")
+                print(f"           --access-key YOUR_NEW_KEY --secret-key YOUR_NEW_SECRET")
+                print(f"   3. Test the new credentials")
+                print(f"   4. Delete the old access keys in AWS IAM console")
+                
+            else:
+                raise ValueError(f"Invalid rotation type: {rotation_type}")
+            
+            if rotation_type == "manual":
+                print(f"✅ Credential rotation completed successfully!")
+                print(f"💾 Old credentials backed up to backups/ directory")
+                print(f"🧪 Test the new credentials with: aws sts get-caller-identity --profile {profile_name}")
+            
+            # Audit the rotation
+            audit_log(SECURITY_EVENTS['CRED_STORE'], {
+                'operation': 'credential_rotation',
+                'profile_name': profile_name,
+                'rotation_type': rotation_type,
+                'success': True
+            })
+            
+        except Exception as e:
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'credential_rotation',
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
+            print(f"❌ Credential rotation failed: {sanitize_error_message(e, 'credential rotation')}")
+            raise
+
+    async def list_backups(self, profile_name: Optional[str] = None) -> None:
+        """List available credential backups."""
+        backup_dir = self.credentials_dir / "backups"
+        
+        if not backup_dir.exists():
+            print("📁 No backups directory found")
+            return
+            
+        backup_files = list(backup_dir.glob("*.enc"))
+        
+        if not backup_files:
+            print("📁 No credential backups found")
+            return
+            
+        print(f"📋 Available credential backups:")
+        print()
+        
+        for backup_file in sorted(backup_files):
+            # Parse filename: profile_timestamp.enc
+            name_parts = backup_file.stem.split('_')
+            if len(name_parts) >= 2:
+                backup_profile = '_'.join(name_parts[:-2]) if len(name_parts) > 2 else name_parts[0]
+                timestamp_str = '_'.join(name_parts[-2:])
+                
+                if profile_name and backup_profile != profile_name:
+                    continue
+                    
+                try:
+                    # Parse timestamp
+                    timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                    age = datetime.now() - timestamp
+                    
+                    print(f"  📦 {backup_profile}")
+                    print(f"     Created: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"     Age: {age.days} days, {age.seconds//3600} hours")
+                    print(f"     File: {backup_file.name}")
+                    print()
+                except ValueError:
+                    print(f"  📦 {backup_file.name} (unknown format)")
+                    print()
+
+    async def restore_from_backup(self, profile_name: str, backup_timestamp: str) -> None:
+        """Restore credentials from a backup."""
+        try:
+            self._validate_profile_name(profile_name)
+            
+            backup_dir = self.credentials_dir / "backups"
+            backup_file = backup_dir / f"{profile_name}_{backup_timestamp}.enc"
+            
+            if not backup_file.exists():
+                raise FileNotFoundError(f"Backup file not found: {backup_file}")
+                
+            print(f"🔄 Restoring credentials for '{profile_name}' from backup...")
+            print(f"📁 Backup file: {backup_file.name}")
+            
+            # Read and decrypt backup
+            with open(backup_file, "rb") as f:
+                encrypted_data = f.read()
+                
+            key = await self.encryptor.derive_key_from_signature()
+            key_array = bytearray(key)
+            
+            try:
+                decrypted_data = self.encryptor.decrypt_data(encrypted_data, key)
+                backup_creds = json.loads(decrypted_data.decode('utf-8'))
+                
+                # Extract credential components
+                access_key = backup_creds.get('aws_access_key_id')
+                secret_key = backup_creds.get('aws_secret_access_key')
+                session_token = backup_creds.get('aws_session_token')
+                region = backup_creds.get('region')
+                
+                if not access_key or not secret_key:
+                    raise ValueError("Invalid backup file - missing required credentials")
+                
+                # Create current backup before restore
+                try:
+                    current_creds = await self.get_credentials(profile_name)
+                    await self._backup_credentials(f"{profile_name}_pre_restore", current_creds)
+                    print(f"📦 Current credentials backed up before restore")
+                except Exception:
+                    pass  # Current credentials might not exist
+                
+                # Restore credentials
+                await self.add_profile(profile_name, access_key, secret_key, session_token, region)
+                
+                print(f"✅ Credentials restored successfully!")
+                print(f"🧪 Test with: aws sts get-caller-identity --profile {profile_name}")
+                
+                # Audit the restore
+                audit_log(SECURITY_EVENTS['CRED_STORE'], {
+                    'operation': 'credential_restore',
+                    'profile_name': profile_name,
+                    'backup_file': backup_file.name,
+                    'success': True
+                })
+                
+            finally:
+                secure_memory_clear(key_array)
+                
+        except Exception as e:
+            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
+                'operation': 'credential_restore',
+                'profile_name': profile_name,
+                'error': str(e)[:100]
+            })
+            print(f"❌ Restore failed: {sanitize_error_message(e, 'credential restore')}")
+            raise
+
     def _detect_shell(self) -> str:
         """Detect the current shell environment."""
         # Check environment variables that indicate the shell
@@ -559,6 +846,24 @@ Examples:
   # Remove a profile
   python aws-hello-creds.py remove-profile my-profile
 
+Credential Rotation Examples:
+  # Check if credentials need rotation
+  python aws-hello-creds.py check-rotation my-profile
+  
+  # Auto-rotate (detects credential type)
+  python aws-hello-creds.py rotate-credentials my-profile
+  
+  # Manual rotation with new credentials
+  python aws-hello-creds.py rotate-credentials my-profile --type manual \\
+    --access-key AKIA... --secret-key SECRET...
+  
+  # List available backups
+  python aws-hello-creds.py list-backups
+  python aws-hello-creds.py list-backups --profile my-profile
+  
+  # Restore from backup
+  python aws-hello-creds.py restore-backup my-profile 20250806_143000
+
 AWS CLI Integration:
   After adding a profile, it will be automatically configured in ~/.aws/config
   You can then use it with: aws s3 ls --profile my-profile
@@ -575,6 +880,13 @@ Environment Variables for Terminal Sessions:
     
   Bash/WSL (auto-detected):
     eval "$(python aws-hello-creds.py set-env my-profile)"
+
+Security Features:
+  • Windows Hello biometric authentication for all operations
+  • Hardware-backed credential encryption and storage
+  • Automatic backup creation before credential rotation
+  • Comprehensive audit logging for security compliance
+  • Secure memory clearing of sensitive data
         """
     )
     
@@ -605,6 +917,28 @@ Environment Variables for Terminal Sessions:
     remove_parser = subparsers.add_parser("remove-profile", help="Remove encrypted credentials for a profile")
     remove_parser.add_argument("profile_name", help="Profile name to remove")
     
+    # Check rotation status command
+    rotation_check_parser = subparsers.add_parser("check-rotation", help="Check if credentials need rotation")
+    rotation_check_parser.add_argument("profile_name", help="Profile name to check")
+    
+    # Rotate credentials command
+    rotate_parser = subparsers.add_parser("rotate-credentials", help="Rotate AWS credentials with backup")
+    rotate_parser.add_argument("profile_name", help="Profile name to rotate")
+    rotate_parser.add_argument("--type", choices=["auto", "manual", "temporary", "access-key"], 
+                              default="auto", help="Rotation type (auto-detected if not specified)")
+    rotate_parser.add_argument("--access-key", help="New AWS Access Key ID (for manual rotation)")
+    rotate_parser.add_argument("--secret-key", help="New AWS Secret Access Key (for manual rotation)")
+    rotate_parser.add_argument("--session-token", help="New AWS Session Token (for manual temporary rotation)")
+    
+    # List backups command
+    backup_list_parser = subparsers.add_parser("list-backups", help="List available credential backups")
+    backup_list_parser.add_argument("--profile", help="Filter backups for specific profile")
+    
+    # Restore from backup command
+    restore_parser = subparsers.add_parser("restore-backup", help="Restore credentials from backup")
+    restore_parser.add_argument("profile_name", help="Profile name to restore")
+    restore_parser.add_argument("backup_timestamp", help="Backup timestamp (format: YYYYMMDD_HHMMSS)")
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -634,6 +968,24 @@ Environment Variables for Terminal Sessions:
             
         elif args.command == "remove-profile":
             await manager.remove_profile(args.profile_name)
+            
+        elif args.command == "check-rotation":
+            await manager.check_rotation_needed(args.profile_name)
+            
+        elif args.command == "rotate-credentials":
+            await manager.rotate_credentials(
+                args.profile_name,
+                args.type,
+                args.access_key,
+                args.secret_key,
+                args.session_token
+            )
+            
+        elif args.command == "list-backups":
+            await manager.list_backups(args.profile)
+            
+        elif args.command == "restore-backup":
+            await manager.restore_from_backup(args.profile_name, args.backup_timestamp)
             
     except WindowsHelloError as e:
         print(f"❌ Windows Hello Error: {e}", file=sys.stderr)
