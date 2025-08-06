@@ -841,9 +841,30 @@ async def output_credentials_json(profile_name: str) -> None:
             output["SessionToken"] = credentials["aws_session_token"]
             
         print(json.dumps(output))
-        
+
     except Exception as e:
         # Write error to stderr so it doesn't interfere with JSON output
+        print(f"Error retrieving credentials: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+async def output_credentials_plaintext(profile_name: str) -> None:
+    """Output credentials in plain text key=value format."""
+    manager = AWSCredentialManager()
+
+    try:
+        credentials = await manager.get_credentials(profile_name)
+
+        print(f"aws_access_key_id={credentials['aws_access_key_id']}")
+        print(f"aws_secret_access_key={credentials['aws_secret_access_key']}")
+
+        if "aws_session_token" in credentials:
+            print(f"aws_session_token={credentials['aws_session_token']}")
+
+        if "region" in credentials:
+            print(f"region={credentials['region']}")
+
+    except Exception as e:
         print(f"Error retrieving credentials: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -933,7 +954,14 @@ Security Features:
     # Get credentials command (for credential_process)
     get_parser = subparsers.add_parser("get-credentials", help="Get credentials for a profile (credential_process format)")
     get_parser.add_argument("--profile", required=True, help="Profile name")
-    
+
+    # Export plain text credentials command
+    export_parser = subparsers.add_parser(
+        "export-profile",
+        help="Export decrypted credentials for a profile in plain text"
+    )
+    export_parser.add_argument("profile_name", help="Profile name")
+
     # Set environment variables command
     env_parser = subparsers.add_parser("set-env", help="Output commands to set AWS environment variables")
     env_parser.add_argument("profile_name", help="Profile name")
@@ -989,7 +1017,10 @@ Security Features:
             
         elif args.command == "get-credentials":
             await output_credentials_json(args.profile)
-            
+
+        elif args.command == "export-profile":
+            await output_credentials_plaintext(args.profile_name)
+
         elif args.command == "set-env":
             await manager.output_env_vars(args.profile_name, args.shell)
             

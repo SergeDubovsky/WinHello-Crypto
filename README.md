@@ -216,6 +216,9 @@ aws-hello-creds remove-profile old-profile
 # Test credential retrieval (outputs JSON for credential_process)
 aws-hello-creds get-credentials --profile my-profile
 
+# Export profile credentials in plain text format
+aws-hello-creds export-profile my-profile
+
 # Set environment variables for shell session
 aws-hello-creds set-env my-profile
 
