@@ -36,11 +36,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Memory Safety**: Enhanced secure memory clearing for environment variable handling and rotation operations
 
 ### Dependencies
+
+- **Updated**: `cryptography>=45.0.6,<46.0.0` (security updates)
+- **Updated**: `pytest>=8.3.0,<9.0.0` (latest stable testing framework)
+- **Updated**: `pytest-asyncio>=0.24.0,<1.0.0` (async test improvements)
+- **Updated**: `pytest-cov>=5.0.0,<6.0.0` (coverage reporting)
+- **Updated**: `black>=24.0.0,<25.0.0` (code formatting)
+- **Updated**: `flake8>=7.1.0,<8.0.0` (linting)
+- **Updated**: `mypy>=1.11.0,<2.0.0` (type checking)
+- **Updated**: `safety>=3.2.0,<3.3.0` (security scanning)
+- **Updated**: `sphinx>=7.0.0,<8.0.0` (documentation)
+- **Updated**: `sphinx-rtd-theme>=2.0.0,<3.0.0` (documentation theme)
 - **Added**: `psutil>=5.9.0,<6.0.0` for enhanced shell detection capabilities
 
 ## Previous Versions
 
 ### Core Features (Existing)
+
 - Windows Hello biometric authentication integration
 - AES-256-CBC encryption with PBKDF2 key derivation
 - AWS credential management with credential_process integration
