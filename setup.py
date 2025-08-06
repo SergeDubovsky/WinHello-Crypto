@@ -4,6 +4,16 @@ Setup script for WinHello-Crypto
 
 from setuptools import setup, find_packages
 from pathlib import Path
+import re
+
+# Load version from pyproject.toml so that it remains the single source of truth
+pyproject_file = Path(__file__).parent / "pyproject.toml"
+version_match = re.search(
+    r'^version\s*=\s*"([^"\n]+)"',
+    pyproject_file.read_text(encoding="utf-8"),
+    re.MULTILINE,
+)
+project_version = version_match.group(1) if version_match else "0.0.0"
 
 # Read README for long description
 readme_file = Path(__file__).parent / "README.md"
@@ -25,7 +35,7 @@ else:
 
 setup(
     name="winhello-crypto",
-    version="2.0.0",
+    version=project_version,
     author="Serge Dubovsky",
     author_email="",
     description="Enterprise-Grade AWS Credential Security with Windows Hello Biometric Authentication",

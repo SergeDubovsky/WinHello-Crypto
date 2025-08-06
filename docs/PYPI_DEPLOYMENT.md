@@ -7,9 +7,10 @@ WinHello-Crypto is now officially available on the Python Package Index (PyPI), 
 ## 🎉 Current Status: LIVE on PyPI
 
 - **Package URL**: [https://pypi.org/project/winhello-crypto/](https://pypi.org/project/winhello-crypto/)
-- **Version**: 2.0.0
+- **Version**: 2.1.3
 - **Published**: August 6, 2025
 - **Console Scripts**: `aws-hello-creds` and `winhello-crypto`
+- **Version Management**: Version number comes directly from `pyproject.toml`
 
 ## Installation for Users
 
