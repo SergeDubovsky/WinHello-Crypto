@@ -793,12 +793,26 @@ class AWSCredentialManager:
                 
         except Exception as e:
             logger.error(f"Error outputting environment variables: {e}")
-            if shell_type.lower() in ["powershell", "pwsh"]:
-                print(f"Write-Host '[ERROR] Error setting AWS environment variables: {e}' -ForegroundColor Red", file=sys.stderr)
-            elif shell_type.lower() in ["cmd", "batch"]:
-                print(f"echo [ERROR] Error setting AWS environment variables: {e}", file=sys.stderr)
+            if shell_type and shell_type.lower() in ["powershell", "pwsh"]:
+                print(
+                    f"Write-Host '[ERROR] Error setting AWS environment variables: {e}' -ForegroundColor Red",
+                    file=sys.stderr,
+                )
+            elif shell_type and shell_type.lower() in ["cmd", "batch"]:
+                print(
+                    f"echo [ERROR] Error setting AWS environment variables: {e}",
+                    file=sys.stderr,
+                )
+            elif shell_type and shell_type.lower() in ["bash", "sh", "zsh"]:
+                print(
+                    f"echo '[ERROR] Error setting AWS environment variables: {e}'",
+                    file=sys.stderr,
+                )
             else:
-                print(f"echo '[ERROR] Error setting AWS environment variables: {e}'", file=sys.stderr)
+                print(
+                    f"[ERROR] Error setting AWS environment variables: {e}",
+                    file=sys.stderr,
+                )
             sys.exit(1)
 
 
