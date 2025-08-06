@@ -218,3 +218,4 @@ COPILOT_SETUP.md
 *.log
 backups/
 .aws/hello-encrypted/
+test_temp/

@@ -120,10 +120,14 @@ class TestFileEncryptor:
         # Create test data
         test_data = b"This is test file content for encryption testing."
         
-        with tempfile.TemporaryDirectory() as temp_dir:
-            input_file = Path(temp_dir) / "input.txt"
-            encrypted_file = Path(temp_dir) / "encrypted.enc"
-            decrypted_file = Path(temp_dir) / "decrypted.txt"
+        # Use workspace-relative temp directory instead of system temp
+        temp_dir = Path.cwd() / "test_temp"
+        temp_dir.mkdir(exist_ok=True)
+        
+        try:
+            input_file = temp_dir / "input.txt"
+            encrypted_file = temp_dir / "encrypted.enc"
+            decrypted_file = temp_dir / "decrypted.txt"
             
             # Write test data
             input_file.write_bytes(test_data)
@@ -142,6 +146,11 @@ class TestFileEncryptor:
                 await encryptor.decrypt_file(str(encrypted_file), str(decrypted_file))
                 assert decrypted_file.exists()
                 assert decrypted_file.read_bytes() == test_data
+        finally:
+            # Clean up test files
+            import shutil
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
     
     def test_secure_memory_clear(self, encryptor):
         """Test secure memory clearing functionality."""
