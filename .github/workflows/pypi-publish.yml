@@ -43,10 +43,10 @@ jobs:
             config = tomllib.load(f)
         
         project = config['project']
-        print(f'Package: {project[\"name\"]}')
-        print(f'Version: {project[\"version\"]}')
-        print(f'Description: {project[\"description\"]}')
-        print(f'Console Scripts: {project.get(\"scripts\", {})}')
+        print('Package:', project['name'])
+        print('Version:', project['version'])
+        print('Description:', project['description'])
+        print('Console Scripts:', project.get('scripts', {}))
         "
     
     - name: Build package
