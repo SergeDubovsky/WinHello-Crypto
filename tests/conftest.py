@@ -14,6 +14,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 def mock_windows_modules():
     """Mock Windows-specific modules for cross-platform testing."""
     
+    # Mock ctypes.windll for cross-platform compatibility
+    import ctypes
+    from unittest.mock import MagicMock
+    
+    # Only set up mocks if we're not on Windows or if windll access might fail
+    original_windll = getattr(ctypes, 'windll', None)
+    
+    try:
+        # Test if we can safely access windll
+        if hasattr(ctypes, 'windll'):
+            test_access = ctypes.windll.kernel32
+    except Exception:
+        # If windll access fails, set up mocks
+        if not hasattr(ctypes, 'windll'):
+            ctypes.windll = MagicMock()
+        if not hasattr(ctypes.windll, 'kernel32'):
+            ctypes.windll.kernel32 = MagicMock()
+        if not hasattr(ctypes.windll, 'user32'):
+            ctypes.windll.user32 = MagicMock()
+    
     # Mock winrt modules
     winrt_mock = MagicMock()
     winrt_mock.windows = MagicMock()

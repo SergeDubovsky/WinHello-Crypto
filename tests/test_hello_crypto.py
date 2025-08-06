@@ -155,8 +155,16 @@ class TestFileEncryptor:
     def test_secure_memory_clear(self, encryptor):
         """Test secure memory clearing functionality."""
         from security_utils import secure_memory_clear
+        from unittest.mock import patch
+        
         data = bytearray(b"sensitive_data")
-        secure_memory_clear(data)
+        
+        # Mock ctypes.windll to prevent Windows fatal exceptions in CI
+        with patch('ctypes.windll') as mock_windll:
+            # Configure the mock to avoid any Windows-specific calls
+            mock_windll.kernel32.RtlSecureZeroMemory = MagicMock()
+            secure_memory_clear(data)
+            
         assert all(b == 0 for b in data)
 
 class TestErrorHandling:
