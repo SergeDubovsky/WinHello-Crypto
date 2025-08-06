@@ -91,12 +91,7 @@ jobs:
         else
           # Auto-increment version based on input or default to patch
           INCREMENT_TYPE="${{ github.event.inputs.version_increment || 'patch' }}"
-          CURRENT_VERSION=$(python -c "
-          import tomllib
-          with open('pyproject.toml', 'rb') as f:
-              config = tomllib.load(f)
-          print(config['project']['version'])
-          ")
+          CURRENT_VERSION=$(python -c "import tomllib; import sys; f=open('pyproject.toml','rb'); config=tomllib.load(f); f.close(); print(config['project']['version'])")
           
           # Parse version components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
