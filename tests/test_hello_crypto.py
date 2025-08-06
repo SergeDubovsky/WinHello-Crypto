@@ -143,10 +143,11 @@ class TestFileEncryptor:
                 assert decrypted_file.exists()
                 assert decrypted_file.read_bytes() == test_data
     
-    def test_secure_clear(self, encryptor):
-        """Test secure memory clearing."""
+    def test_secure_memory_clear(self, encryptor):
+        """Test secure memory clearing functionality."""
+        from security_utils import secure_memory_clear
         data = bytearray(b"sensitive_data")
-        encryptor.secure_clear(data)
+        secure_memory_clear(data)
         assert all(b == 0 for b in data)
 
 class TestErrorHandling:

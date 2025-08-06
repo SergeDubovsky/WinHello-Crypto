@@ -213,3 +213,8 @@ LINKEDIN_POST.md
 .copilot-rules.md
 .copilot-reference.md
 COPILOT_SETUP.md
+
+# WinHello-Crypto specific
+*.log
+backups/
+.aws/hello-encrypted/

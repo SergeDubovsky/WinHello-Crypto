@@ -374,8 +374,6 @@ class FileEncryptor:
         
         if len(data) == 0:
             raise ValueError("Cannot encrypt empty data")
-            
-        logger.debug(f"Encrypting {len(data)} bytes of data")
         
         # Generate cryptographically secure random IV
         iv = secrets.token_bytes(AES_BLOCK_SIZE)
@@ -397,7 +395,6 @@ class FileEncryptor:
 
         # Return IV + ciphertext + HMAC
         result = iv + ciphertext + data_hmac
-        logger.debug(f"Encryption completed, output size: {len(result)} bytes")
         return result
     
     def decrypt_data(self, data: bytes, key: bytes) -> bytes:
@@ -407,8 +404,6 @@ class FileEncryptor:
         
         if len(data) < AES_BLOCK_SIZE + 32:  # IV + minimum HMAC + data
             raise ValueError("Invalid encrypted data: too short")
-
-        logger.debug(f"Decrypting {len(data)} bytes of data")
 
         # Extract IV, ciphertext, and HMAC
         iv = data[:AES_BLOCK_SIZE]
@@ -455,11 +450,6 @@ class FileEncryptor:
 
         logger.debug(f"Decryption completed, output size: {len(plaintext)} bytes")
         return plaintext
-    
-    @staticmethod
-    def secure_clear(data: bytearray) -> None:
-        """Securely clear sensitive data from memory (deprecated - use security_utils.secure_memory_clear)."""
-        secure_memory_clear(data)
     
     async def encrypt_file(self, input_path: str, output_path: str) -> None:
         """Encrypt a file using Windows Hello authentication with security validation."""
