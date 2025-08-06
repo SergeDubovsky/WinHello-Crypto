@@ -585,14 +585,15 @@ async def main(mode: str, input_file: str, output_file: str) -> None:
         print(f"Unexpected Error: {e}")
 
 
-if __name__ == "__main__":
+def cli_main():
+    """CLI entry point for console script."""
     parser = argparse.ArgumentParser(
         description="Encrypt/decrypt files with Windows Hello biometric authentication.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python hello_crypto.py encrypt document.txt encrypted.bin
-  python hello_crypto.py decrypt encrypted.bin decrypted.txt
+  winhello-crypto encrypt document.txt encrypted.bin
+  winhello-crypto decrypt encrypted.bin decrypted.txt
         """
     )
     parser.add_argument(
@@ -606,3 +607,7 @@ Examples:
     args = parser.parse_args()
     
     asyncio.run(main(args.mode, args.input_file, args.output_file))
+
+
+if __name__ == "__main__":
+    cli_main()

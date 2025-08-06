@@ -60,8 +60,8 @@ docs = [
 ]
 
 [project.scripts]
-winhello-crypto = "hello_crypto:main"
-aws-hello-creds = "aws_hello_creds:main"
+winhello-crypto = "hello_crypto:cli_main"
+aws-hello-creds = "aws_hello_creds:cli_main"
 
 [project.urls]
 Homepage = "https://github.com/SergeDubovsky/WinHello-Crypto"
