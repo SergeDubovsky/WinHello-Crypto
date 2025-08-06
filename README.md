@@ -3,7 +3,7 @@
 [![CI Tests](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/ci.yml)
 [![Security Tests](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/security-tests.yml/badge.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/security-tests.yml)
 [![Security](https://img.shields.io/badge/Security-Enterprise%20Grade-green.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
-[![Encryption](https://img.shields.io/badge/Encryption-AES%20256%20%2B%20PBKDF2-blue.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
+[![Encryption](https://img.shields.io/badge/Encryption-AES%20256%20GCM%20%2B%20Argon2id-blue.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-yellow.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![License](https://img.shields.io/badge/License-Apache%202.0-red.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/blob/main/LICENSE)
@@ -29,7 +29,7 @@ WinHello-Crypto provides **hardware-backed credential protection** that:
 - **Eliminates plaintext storage** - Zero credentials stored in readable format
 - **Requires biometric authentication** - Each access needs fingerprint/face/PIN
 - **Provides seamless integration** - Works transparently with existing AWS CLI workflows
-- **Offers enterprise-grade encryption** - AES-256 + PBKDF2 + HMAC integrity protection
+- **Offers enterprise-grade encryption** - AES-256-GCM + Argon2id + authenticated encryption
 - **Ensures memory safety** - Secure clearing of sensitive data from memory
 - **Maintains audit trails** - Comprehensive logging without credential exposure
 
@@ -65,7 +65,7 @@ $ aws s3 ls --profile my-secure-profile
 ## Features
 
 - **Biometric Authentication**: Uses Windows Hello for secure key derivation
-- **Strong Encryption**: AES-256-CBC with PKCS7 padding
+- **Strong Encryption**: AES-256-GCM with authenticated encryption and integrity protection
 - **Hardware-Backed Security**: Encryption keys derived from Windows Hello signatures
 - **Memory Safety**: Secure memory clearing of sensitive data
 - **File Operations**: Encrypt and decrypt any file type
@@ -372,8 +372,8 @@ python hello_crypto.py decrypt backup.tar.gz.enc backup.tar.gz
 1. **Key Derivation**: The application creates a unique key pair in Windows Hello's secure storage
 1. **Biometric Challenge**: When encrypting/decrypting, Windows Hello prompts for biometric authentication
 1. **Signature Generation**: A signature is generated using the biometric authentication
-1. **Key Derivation**: The signature is hashed with SHA-256 to create a 256-bit AES key
-1. **Encryption**: Files are encrypted using AES-256-CBC with a random IV and PKCS7 padding
+1. **Key Derivation**: The signature is processed with Argon2id to create a 256-bit AES key
+1. **Encryption**: Files are encrypted using AES-256-GCM providing confidentiality and integrity
 
 ### Windows Hello Dialog Enhancement
 
@@ -391,7 +391,7 @@ This means you'll experience truly hands-free biometric authentication - just pr
 - **Hardware-Backed Security**: Keys are stored in Windows Hello's secure storage
 - **Biometric Authentication**: Each operation requires biometric verification
 - **No Key Storage**: Encryption keys are derived on-demand and cleared from memory
-- **Strong Encryption**: AES-256-CBC with proper padding and random IVs
+- **Strong Encryption**: AES-256-GCM with authenticated encryption and integrity protection
 - **Memory Safety**: Sensitive data is securely cleared from memory after use
 
 ## Error Handling
