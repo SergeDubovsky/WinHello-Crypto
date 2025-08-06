@@ -69,6 +69,9 @@ $ aws s3 ls --profile my-secure-profile
 - 📁 **File Operations**: Encrypt and decrypt any file type
 - ☁️ **AWS Credentials Manager**: Securely store and retrieve AWS credentials
 - 🔄 **AWS CLI Integration**: Seamless integration with AWS CLI credential_process
+- 🌐 **Environment Variable Support**: Set AWS credentials as environment variables for shell sessions
+- 🖥️ **Multi-Shell Support**: Automatic detection of PowerShell, CMD, and Bash shells
+- 🎯 **Enhanced UX**: Automatic Windows Hello dialog activation for seamless biometric authentication
 - ⚡ **Async Operations**: Non-blocking file operations
 
 ## Components
@@ -96,7 +99,7 @@ git clone https://github.com/SergeDubovsky/WinHello-Crypto.git
 cd WinHello-Crypto
 ```
 
-2. Install required dependencies:
+1. Install required dependencies:
 
 ```bash
 # Install from requirements.txt (recommended)
@@ -131,6 +134,8 @@ python aws_hello_creds.py add-profile temp-profile \
 
 ### Using with AWS CLI
 
+#### Method 1: Using AWS CLI profiles (Recommended for single commands)
+
 After adding a profile, it's automatically configured in `~/.aws/config` with a `credential_process` entry:
 
 ```ini
@@ -150,6 +155,40 @@ aws s3 ls --profile my-profile
 aws cloudformation deploy --profile my-profile --template-file template.yaml --stack-name my-stack
 ```
 
+#### Method 2: Environment Variables (Recommended for multiple commands)
+
+For scenarios where you need to run multiple AWS CLI commands in a session, use the `set-env` command to avoid repeated Windows Hello prompts:
+
+```powershell
+# PowerShell - Set environment variables with automatic shell detection
+python aws_hello_creds.py set-env my-profile | Invoke-Expression
+
+# Now run multiple commands without additional authentication
+aws s3 ls
+aws ec2 describe-instances
+aws lambda list-functions
+```
+
+```cmd
+REM Command Prompt - Set environment variables
+for /f "delims=" %i in ('python aws_hello_creds.py set-env my-profile') do %i
+
+REM Now run multiple commands
+aws s3 ls
+aws ec2 describe-instances
+```
+
+```bash
+# Bash/WSL - Set environment variables
+eval "$(python aws_hello_creds.py set-env my-profile)"
+
+# Now run multiple commands
+aws s3 ls
+aws ec2 describe-instances
+```
+
+The tool automatically detects your shell type (PowerShell, CMD, Bash) and outputs the appropriate syntax for setting environment variables.
+
 ### Managing Profiles
 
 ```bash
@@ -161,6 +200,14 @@ python aws_hello_creds.py remove-profile old-profile
 
 # Test credential retrieval (outputs JSON for credential_process)
 python aws_hello_creds.py get-credentials --profile my-profile
+
+# Set environment variables for shell session
+python aws_hello_creds.py set-env my-profile
+
+# Specify shell type explicitly (auto-detection is usually sufficient)
+python aws_hello_creds.py set-env my-profile --shell powershell
+python aws_hello_creds.py set-env my-profile --shell cmd
+python aws_hello_creds.py set-env my-profile --shell bash
 ```
 
 ### Windows Batch Integration
@@ -212,11 +259,24 @@ python hello_crypto.py decrypt backup.tar.gz.enc backup.tar.gz
 
 ## How It Works
 
+### Core Security Architecture
+
 1. **Key Derivation**: The application creates a unique key pair in Windows Hello's secure storage
-2. **Biometric Challenge**: When encrypting/decrypting, Windows Hello prompts for biometric authentication
-3. **Signature Generation**: A signature is generated using the biometric authentication
-4. **Key Derivation**: The signature is hashed with SHA-256 to create a 256-bit AES key
-5. **Encryption**: Files are encrypted using AES-256-CBC with a random IV and PKCS7 padding
+1. **Biometric Challenge**: When encrypting/decrypting, Windows Hello prompts for biometric authentication
+1. **Signature Generation**: A signature is generated using the biometric authentication
+1. **Key Derivation**: The signature is hashed with SHA-256 to create a 256-bit AES key
+1. **Encryption**: Files are encrypted using AES-256-CBC with a random IV and PKCS7 padding
+
+### Windows Hello Dialog Enhancement
+
+The tool includes advanced window management to provide a seamless authentication experience:
+
+- **Automatic Dialog Detection**: Continuously monitors for Windows Hello authentication dialogs
+- **Smart Window Activation**: Automatically brings the dialog to the foreground and activates it
+- **Biometric Sensor Triggering**: Simulates user interaction to activate the biometric sensor automatically
+- **Cross-Platform Compatibility**: Works across different Windows Hello implementations
+
+This means you'll experience truly hands-free biometric authentication - just provide your fingerprint, face, or PIN when prompted without needing to manually click or focus the dialog window.
 
 ## Security Features
 
@@ -276,15 +336,31 @@ await encryptor.decrypt_file("input.enc", "output.txt")
    - Verify your device has biometric hardware
    - Check that Windows Hello is enabled for your account
 
-2. **"Biometric authentication failed"**
+1. **"Biometric authentication failed"**
    - Try using a different biometric method (PIN, fingerprint, face)
    - Ensure your biometric data is properly enrolled
    - Check Windows Hello settings
 
-3. **"Failed to create key"**
+1. **"Failed to create key"**
    - Run the application as an administrator
    - Ensure Windows Hello service is running
    - Check Windows event logs for detailed error information
+
+1. **Windows Hello dialog doesn't respond to biometric input**
+   - The tool now automatically activates the dialog - just wait a moment for it to become responsive
+   - If the issue persists, try using Windows Hello PIN as an alternative
+   - Check that Windows Hello services are running properly
+
+1. **Environment variables not set properly**
+   - Ensure you're using the correct syntax for your shell:
+     - PowerShell: `python aws_hello_creds.py set-env profile | Invoke-Expression`
+     - CMD: `for /f "delims=" %i in ('python aws_hello_creds.py set-env profile') do %i`
+     - Bash: `eval "$(python aws_hello_creds.py set-env profile)"`
+   - The tool auto-detects your shell, but you can specify it explicitly with `--shell`
+
+1. **Shell auto-detection issues**
+   - Verify your shell type with `--shell powershell`, `--shell cmd`, or `--shell bash`
+   - The tool detects shells based on parent process information
 
 ## Contributing
 

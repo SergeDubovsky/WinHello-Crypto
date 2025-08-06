@@ -8,6 +8,9 @@ cryptography>=41.0.0,<46.0.0
 # Note: This package is Windows-specific and may not be available on all CI environments
 pywinrt>=2.0.0,<3.0.0; platform_system=="Windows"
 
+# Optional: Enhanced shell detection (fallback methods available if not installed)
+psutil>=5.9.0,<6.0.0
+
 # Development and testing dependencies
 pytest>=7.4.0,<8.0.0
 pytest-asyncio>=0.21.0,<1.0.0

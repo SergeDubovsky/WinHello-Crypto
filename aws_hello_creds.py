@@ -365,6 +365,146 @@ class AWSCredentialManager:
         print(f"✅ Encrypted credentials for profile '{profile_name}' removed.")
         print(f"Note: You may want to manually remove the profile from ~/.aws/config")
 
+    def _detect_shell(self) -> str:
+        """Detect the current shell environment."""
+        # Check environment variables that indicate the shell
+        shell_env = os.environ.get('SHELL', '').lower()
+        if 'bash' in shell_env:
+            return 'bash'
+        elif 'zsh' in shell_env:
+            return 'zsh'
+        elif 'sh' in shell_env and 'bash' not in shell_env:
+            return 'sh'
+        
+        # Check for PowerShell specific environment variables
+        if os.environ.get('PSModulePath') or os.environ.get('POWERSHELL_DISTRIBUTION_CHANNEL'):
+            return 'powershell'
+        
+        # Check for PowerShell execution policy (PowerShell specific)
+        if os.environ.get('PSExecutionPolicyPreference'):
+            return 'powershell'
+        
+        # Check parent process name (Windows)
+        try:
+            import psutil
+            parent = psutil.Process().parent()
+            if parent:
+                parent_name = parent.name().lower()
+                if 'powershell' in parent_name or 'pwsh' in parent_name:
+                    return 'powershell'
+                elif 'cmd' in parent_name:
+                    return 'cmd'
+                elif 'bash' in parent_name:
+                    return 'bash'
+                elif 'zsh' in parent_name:
+                    return 'zsh'
+                elif 'windowsterminal' in parent_name or 'wt' in parent_name:
+                    # Windows Terminal - check for PowerShell as default
+                    return 'powershell'
+        except (ImportError, Exception):
+            # psutil not available or other error, continue with other detection methods
+            pass
+        
+        # Check for Windows Command Prompt
+        if os.environ.get('COMSPEC', '').lower().endswith('cmd.exe'):
+            return 'cmd'
+        
+        # Check for WSL or Linux environment
+        if os.environ.get('WSL_DISTRO_NAME') or os.path.exists('/proc/version'):
+            return 'bash'
+        
+        # Check for Windows Terminal
+        if os.environ.get('WT_SESSION'):
+            return 'powershell'  # Windows Terminal typically uses PowerShell
+        
+        # Check VS Code integrated terminal
+        if os.environ.get('TERM_PROGRAM') == 'vscode':
+            # In VS Code, check for PowerShell specific vars
+            if os.environ.get('PSModulePath'):
+                return 'powershell'
+            return 'powershell'  # Default to PowerShell in VS Code on Windows
+        
+        # Default based on OS
+        if os.name == 'nt':  # Windows
+            return 'powershell'  # Modern Windows defaults to PowerShell
+        else:  # Unix-like
+            return 'bash'
+
+    async def output_env_vars(self, profile_name: str, shell_type: Optional[str] = None) -> None:
+        """Output environment variable commands for setting AWS credentials."""
+        try:
+            credentials = await self.get_credentials(profile_name)
+            
+            # Auto-detect shell if not specified
+            if shell_type is None:
+                shell_type = self._detect_shell()
+                logger.info(f"Auto-detected shell: {shell_type}")
+            
+            # Audit the env var access
+            audit_log(SECURITY_EVENTS['CRED_RETRIEVE'], {
+                'operation': 'output_env_vars',
+                'profile_name': profile_name,
+                'shell_type': shell_type
+            })
+            
+            if shell_type.lower() in ["powershell", "pwsh"]:
+                # PowerShell format
+                print(f"$env:AWS_ACCESS_KEY_ID = '{credentials['aws_access_key_id']}'")
+                print(f"$env:AWS_SECRET_ACCESS_KEY = '{credentials['aws_secret_access_key']}'")
+                
+                if "aws_session_token" in credentials:
+                    print(f"$env:AWS_SESSION_TOKEN = '{credentials['aws_session_token']}'")
+                else:
+                    print("Remove-Item -Path 'Env:AWS_SESSION_TOKEN' -ErrorAction SilentlyContinue")
+                    
+                if "region" in credentials:
+                    print(f"$env:AWS_DEFAULT_REGION = '{credentials['region']}'")
+                    
+                print("Write-Host '[OK] AWS environment variables set for profile: " + profile_name + "' -ForegroundColor Green")
+                
+            elif shell_type.lower() in ["cmd", "batch"]:
+                # Command Prompt format
+                print(f"set AWS_ACCESS_KEY_ID={credentials['aws_access_key_id']}")
+                print(f"set AWS_SECRET_ACCESS_KEY={credentials['aws_secret_access_key']}")
+                
+                if "aws_session_token" in credentials:
+                    print(f"set AWS_SESSION_TOKEN={credentials['aws_session_token']}")
+                else:
+                    print("set AWS_SESSION_TOKEN=")
+                    
+                if "region" in credentials:
+                    print(f"set AWS_DEFAULT_REGION={credentials['region']}")
+                    
+                print(f"echo [OK] AWS environment variables set for profile: {profile_name}")
+                
+            elif shell_type.lower() in ["bash", "sh", "zsh"]:
+                # Bash/Unix shell format
+                print(f"export AWS_ACCESS_KEY_ID='{credentials['aws_access_key_id']}'")
+                print(f"export AWS_SECRET_ACCESS_KEY='{credentials['aws_secret_access_key']}'")
+                
+                if "aws_session_token" in credentials:
+                    print(f"export AWS_SESSION_TOKEN='{credentials['aws_session_token']}'")
+                else:
+                    print("unset AWS_SESSION_TOKEN")
+                    
+                if "region" in credentials:
+                    print(f"export AWS_DEFAULT_REGION='{credentials['region']}'")
+                    
+                print(f"echo '[OK] AWS environment variables set for profile: {profile_name}'")
+                
+            else:
+                raise ValueError(f"Unsupported shell type: {shell_type}")
+                
+        except Exception as e:
+            logger.error(f"Error outputting environment variables: {e}")
+            if shell_type.lower() in ["powershell", "pwsh"]:
+                print(f"Write-Host '[ERROR] Error setting AWS environment variables: {e}' -ForegroundColor Red", file=sys.stderr)
+            elif shell_type.lower() in ["cmd", "batch"]:
+                print(f"echo [ERROR] Error setting AWS environment variables: {e}", file=sys.stderr)
+            else:
+                print(f"echo '[ERROR] Error setting AWS environment variables: {e}'", file=sys.stderr)
+            sys.exit(1)
+
 
 async def output_credentials_json(profile_name: str) -> None:
     """Output credentials in AWS credential_process JSON format."""
@@ -410,12 +550,31 @@ Examples:
   # Get credentials (used by AWS CLI via credential_process)
   python aws-hello-creds.py get-credentials --profile my-profile
 
+  # Set environment variables for terminal session
+  python aws-hello-creds.py set-env my-profile
+  python aws-hello-creds.py set-env my-profile --shell powershell
+  python aws-hello-creds.py set-env my-profile --shell cmd
+  python aws-hello-creds.py set-env my-profile --shell bash
+
   # Remove a profile
   python aws-hello-creds.py remove-profile my-profile
 
 AWS CLI Integration:
   After adding a profile, it will be automatically configured in ~/.aws/config
   You can then use it with: aws s3 ls --profile my-profile
+
+Environment Variables for Terminal Sessions:
+  The shell type is auto-detected, but you can override it if needed.
+  Use the set-env command to set AWS environment variables for your current shell session:
+  
+  PowerShell (auto-detected):
+    python aws-hello-creds.py set-env my-profile | Invoke-Expression
+    
+  Command Prompt (auto-detected):
+    for /f "delims=" %i in ('python aws-hello-creds.py set-env my-profile') do %i
+    
+  Bash/WSL (auto-detected):
+    eval "$(python aws-hello-creds.py set-env my-profile)"
         """
     )
     
@@ -432,6 +591,12 @@ AWS CLI Integration:
     # Get credentials command (for credential_process)
     get_parser = subparsers.add_parser("get-credentials", help="Get credentials for a profile (credential_process format)")
     get_parser.add_argument("--profile", required=True, help="Profile name")
+    
+    # Set environment variables command
+    env_parser = subparsers.add_parser("set-env", help="Output commands to set AWS environment variables")
+    env_parser.add_argument("profile_name", help="Profile name")
+    env_parser.add_argument("--shell", choices=["powershell", "pwsh", "cmd", "batch", "bash", "sh", "zsh"], 
+                           help="Shell type for environment variable format (auto-detected if not specified)")
     
     # List profiles command
     subparsers.add_parser("list-profiles", help="List all available encrypted profiles")
@@ -460,6 +625,9 @@ AWS CLI Integration:
             
         elif args.command == "get-credentials":
             await output_credentials_json(args.profile)
+            
+        elif args.command == "set-env":
+            await manager.output_env_vars(args.profile_name, args.shell)
             
         elif args.command == "list-profiles":
             await manager.list_profiles()
