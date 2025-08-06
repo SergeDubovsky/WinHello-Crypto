@@ -252,6 +252,64 @@ class TestCLIFunctions:
                 
             finally:
                 sys.stdout = sys.__stdout__
+
+    @pytest.mark.asyncio
+    async def test_output_credentials_plaintext(self):
+        """Test plain text credential export."""
+        test_credentials = {
+            "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "region": "us-east-1",
+        }
+
+        with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager.get_credentials = AsyncMock(return_value=test_credentials)
+            mock_manager_class.return_value = mock_manager
+
+            import io
+            import sys
+            captured_output = io.StringIO()
+            sys.stdout = captured_output
+
+            try:
+                await aws_hello_creds.output_credentials_plaintext("test-profile")
+                output = captured_output.getvalue().splitlines()
+
+                assert "aws_access_key_id=AKIAIOSFODNN7EXAMPLE" in output
+                assert "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" in output
+                assert "region=us-east-1" in output
+
+            finally:
+                sys.stdout = sys.__stdout__
+
+    @pytest.mark.asyncio
+    async def test_output_credentials_plaintext_with_session_token(self):
+        """Test plain text output including session token."""
+        test_credentials = {
+            "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "aws_session_token": "IQoJb3JpZ2luX2V" + "x" * 100,
+        }
+
+        with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager.get_credentials = AsyncMock(return_value=test_credentials)
+            mock_manager_class.return_value = mock_manager
+
+            import io
+            import sys
+            captured_output = io.StringIO()
+            sys.stdout = captured_output
+
+            try:
+                await aws_hello_creds.output_credentials_plaintext("test-profile")
+                output = captured_output.getvalue().splitlines()
+
+                assert "aws_session_token=" + test_credentials["aws_session_token"] in output
+
+            finally:
+                sys.stdout = sys.__stdout__
     
     @pytest.mark.asyncio
     async def test_output_credentials_json_with_session_token(self):
