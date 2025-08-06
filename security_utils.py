@@ -271,7 +271,9 @@ def secure_memory_clear(data: bytearray) -> None:
             # Use Windows SecureZeroMemory if available
             kernel32 = ctypes.windll.kernel32
             kernel32.RtlSecureZeroMemory.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-            kernel32.RtlSecureZeroMemory(ctypes.addressof(data), len(data))
+            address = ctypes.addressof(ctypes.c_char.from_buffer(data))
+            # Convert bytearray to ctypes buffer to obtain memory address
+            kernel32.RtlSecureZeroMemory(address, len(data))
     except Exception:
         # Fallback to multiple overwrites
         for _ in range(3):

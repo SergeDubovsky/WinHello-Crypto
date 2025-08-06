@@ -151,6 +151,18 @@ class TestSecurityFunctions:
         secure_memory_clear(data)
         # Data should be zeroed
         assert all(b == 0 for b in data)
+
+    def test_secure_memory_clear_windows(self):
+        data = bytearray(b"sensitive_data")
+        mock_rtl = MagicMock()
+        mock_kernel32 = MagicMock()
+        mock_kernel32.RtlSecureZeroMemory = mock_rtl
+        with patch('platform.system', return_value='Windows'), \
+             patch('ctypes.windll', create=True) as mock_dll:
+            mock_dll.kernel32 = mock_kernel32
+            secure_memory_clear(data)
+            mock_rtl.assert_called_once()
+        assert all(b == 0 for b in data)
     
     def test_constant_time_compare(self):
         data1 = b"test_data"
