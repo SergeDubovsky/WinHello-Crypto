@@ -207,3 +207,9 @@ marimo/_lsp/
 __marimo__/
 LINKEDIN_POST.md
 .claude/settings.local.json
+
+# Copilot instruction files (development aids)
+.copilot-instructions.md
+.copilot-rules.md
+.copilot-reference.md
+COPILOT_SETUP.md
