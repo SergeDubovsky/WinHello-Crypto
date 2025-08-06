@@ -47,6 +47,108 @@ class TestFileEncryptor:
     def test_encrypt_decrypt_data_roundtrip(self, encryptor, test_key):
         """Test that encryption and decryption work correctly."""
         original_data = b"This is test data for encryption and decryption testing."
+    
+    def test_invalid_encrypted_data_format(self, encryptor):
+        """Test decryption with invalid data format."""
+        with pytest.raises(Exception):
+            encryptor.decrypt_data(b"invalid_data", b"fake_key")
+    
+    def test_insufficient_data_length(self, encryptor):
+        """Test decryption with data too short."""
+        # Data must be at least nonce + tag length
+        min_length = AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE
+        short_data = b"x" * (min_length - 1)
+        
+        with pytest.raises(Exception):
+            encryptor.decrypt_data(short_data, b"fake_key")
+    
+    def test_wrong_key_decryption(self, encryptor, test_key):
+        """Test decryption with wrong key."""
+        original_data = b"test data"
+        
+        # Encrypt with correct key
+        encrypted = encryptor.encrypt_data(original_data, test_key)
+        
+        # Try to decrypt with wrong key
+        wrong_key = b"wrong_key_123456" * 2  # 32 bytes
+        
+        with pytest.raises(Exception):
+            encryptor.decrypt_data(encrypted, wrong_key)
+    
+    @patch('hello_crypto.KeyCredentialManager')
+    def test_is_supported_mock(self, mock_kcm, encryptor):
+        """Test is_supported method with mocked KeyCredentialManager."""
+        # Test when manager is available
+        mock_instance = MagicMock()
+        mock_kcm.get_default_async.return_value = AsyncMock(return_value=mock_instance)
+        
+        # For async method, we need to handle it differently
+        import asyncio
+        async def test_async():
+            result = await encryptor.is_supported()
+            return result
+        
+        # Run the async test
+        result = asyncio.run(test_async())
+        assert result is True
+    
+    @patch('hello_crypto.KeyCredentialManager')
+    def test_is_supported_no_manager(self, mock_kcm, encryptor):
+        """Test is_supported when no credential manager available."""
+        mock_kcm.get_default_async.return_value = AsyncMock(return_value=None)
+        
+        import asyncio
+        async def test_async():
+            result = await encryptor.is_supported()
+            return result
+        
+        result = asyncio.run(test_async())
+        assert result is False
+    
+    @patch('hello_crypto.KeyCredentialManager')
+    def test_is_supported_exception(self, mock_kcm, encryptor):
+        """Test is_supported when exception occurs."""
+        mock_kcm.get_default_async.side_effect = Exception("Windows Hello not available")
+        
+        import asyncio
+        async def test_async():
+            result = await encryptor.is_supported()
+            return result
+        
+        result = asyncio.run(test_async())
+        assert result is False
+    
+    def test_windows_hello_error_creation(self):
+        """Test WindowsHelloError exception creation."""
+        error = WindowsHelloError("Test error message")
+        assert str(error) == "Test error message"
+        assert isinstance(error, Exception)
+    
+    def test_encrypt_empty_data(self, encryptor, test_key):
+        """Test encryption of empty data."""
+        empty_data = b""
+        encrypted = encryptor.encrypt_data(empty_data, test_key)
+        decrypted = encryptor.decrypt_data(encrypted, test_key)
+        assert decrypted == empty_data
+    
+    def test_encrypt_large_data(self, encryptor, test_key):
+        """Test encryption of large data."""
+        large_data = b"x" * 10000  # 10KB of data
+        encrypted = encryptor.encrypt_data(large_data, test_key)
+        decrypted = encryptor.decrypt_data(encrypted, test_key)
+        assert decrypted == large_data
+
+    def test_key_size_validation(self, encryptor):
+        """Test that encrypt_data validates key size."""
+        test_data = b"test data"
+        short_key = b"short"
+        
+        with pytest.raises(ValueError):
+            encryptor.encrypt_data(test_data, short_key)
+        
+    def test_encrypt_decrypt_data_roundtrip_original(self, encryptor, test_key):
+        """Test that encryption and decryption work correctly."""
+        original_data = b"This is test data for encryption and decryption testing."
         
         # Encrypt
         encrypted = encryptor.encrypt_data(original_data, test_key)

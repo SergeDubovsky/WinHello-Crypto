@@ -56,7 +56,212 @@ class TestRateLimiter:
         # Should be able to attempt again
         limiter.check_rate_limit("test_user")
 
-class TestFileValidation:
+class TestSecurityUtilities:
+    """Test various security utility functions."""
+    
+    def test_validate_aws_credentials_valid(self):
+        """Test validation of valid AWS credentials."""
+        # Valid access key and secret key
+        validate_aws_credentials(
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        )
+        
+        # With session token
+        validate_aws_credentials(
+            "AKIAIOSFODNN7EXAMPLE", 
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "IQoJb3JpZ2luX2VjEHoaCXVzLWVhc3QtMSJIMEYCIQD" + "x" * 100
+        )
+    
+    def test_validate_aws_credentials_invalid_access_key(self):
+        """Test validation with invalid access key format."""
+        with pytest.raises(ValidationError):
+            validate_aws_credentials("INVALID", "validSecret123456789012345678901234567890")
+        
+        with pytest.raises(ValidationError):
+            validate_aws_credentials("", "validSecret123456789012345678901234567890")
+        
+        with pytest.raises(ValidationError):
+            validate_aws_credentials("AKIA" + "x" * 100, "validSecret123456789012345678901234567890")
+    
+    def test_validate_aws_credentials_invalid_secret_key(self):
+        """Test validation with invalid secret key format."""
+        with pytest.raises(ValidationError):
+            validate_aws_credentials("AKIAIOSFODNN7EXAMPLE", "short")
+        
+        with pytest.raises(ValidationError):
+            validate_aws_credentials("AKIAIOSFODNN7EXAMPLE", "")
+        
+        with pytest.raises(ValidationError):
+            validate_aws_credentials("AKIAIOSFODNN7EXAMPLE", "x" * 200)
+    
+    def test_validate_aws_credentials_invalid_session_token(self):
+        """Test validation with invalid session token."""
+        with pytest.raises(ValidationError):
+            validate_aws_credentials(
+                "AKIAIOSFODNN7EXAMPLE",
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", 
+                "short"
+            )
+        
+        with pytest.raises(ValidationError):
+            validate_aws_credentials(
+                "AKIAIOSFODNN7EXAMPLE",
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+                ""
+            )
+    
+    def test_validate_aws_region_valid(self):
+        """Test validation of valid AWS regions."""
+        validate_aws_region("us-east-1")
+        validate_aws_region("eu-west-1")
+        validate_aws_region("ap-southeast-2")
+        validate_aws_region("us-gov-west-1")
+    
+    def test_validate_aws_region_invalid(self):
+        """Test validation of invalid AWS regions."""
+        with pytest.raises(ValidationError):
+            validate_aws_region("invalid-region")
+        
+        with pytest.raises(ValidationError):
+            validate_aws_region("")
+        
+        with pytest.raises(ValidationError):
+            validate_aws_region("us-east-invalid")
+    
+    def test_validate_profile_name_valid(self):
+        """Test validation of valid profile names."""
+        validate_profile_name("valid-profile")
+        validate_profile_name("profile123")
+        validate_profile_name("my.profile")
+        validate_profile_name("test_profile")
+        validate_profile_name("a" * 64)  # Maximum length
+    
+    def test_validate_profile_name_invalid(self):
+        """Test validation of invalid profile names."""
+        with pytest.raises(ValidationError):
+            validate_profile_name("")
+        
+        with pytest.raises(ValidationError):
+            validate_profile_name("   ")
+        
+        with pytest.raises(ValidationError):
+            validate_profile_name("profile with spaces")
+        
+        with pytest.raises(ValidationError):
+            validate_profile_name("a" * 65)  # Too long
+        
+        with pytest.raises(ValidationError):
+            validate_profile_name("profile/with/slashes")
+        
+        with pytest.raises(ValidationError):
+            validate_profile_name("profile\\with\\backslashes")
+    
+    def test_secure_memory_clear(self):
+        """Test secure memory clearing."""
+        data = bytearray(b"sensitive data")
+        original_length = len(data)
+        
+        secure_memory_clear(data)
+        
+        # Data should be zeroed
+        assert len(data) == original_length
+        assert all(b == 0 for b in data)
+    
+    def test_constant_time_compare_equal(self):
+        """Test constant time comparison with equal values."""
+        a = b"test_value_123"
+        b = b"test_value_123"
+        assert constant_time_compare(a, b) is True
+    
+    def test_constant_time_compare_different(self):
+        """Test constant time comparison with different values."""
+        a = b"test_value_123"
+        b = b"different_value"
+        assert constant_time_compare(a, b) is False
+    
+    def test_constant_time_compare_different_lengths(self):
+        """Test constant time comparison with different length values."""
+        a = b"short"
+        b = b"much_longer_value"
+        assert constant_time_compare(a, b) is False
+    
+    def test_sanitize_error_message(self):
+        """Test error message sanitization."""
+        # Test with actual API signature
+        error = Exception("File not found")
+        result = sanitize_error_message(error, "file_operation")
+        assert isinstance(result, str)
+        
+        # Test with sensitive error
+        sensitive_error = Exception("Error with key: AKIAIOSFODNN7EXAMPLE")
+        result = sanitize_error_message(sensitive_error, "credential_operation")
+        assert isinstance(result, str)
+    
+    def test_create_and_verify_integrity_hash(self):
+        """Test integrity hash creation and verification."""
+        data = b"test data for integrity check"
+        key = b"test_key_1234567890123456789012"  # 32 bytes
+        
+        # Create hash
+        hash_value = create_integrity_hash(data, key)
+        assert isinstance(hash_value, bytes)
+        assert len(hash_value) > 0
+        
+        # Verify correct data - note the parameter order
+        assert verify_integrity_hash(data, key, hash_value) is True
+        
+        # Verify incorrect data
+        assert verify_integrity_hash(b"different data", key, hash_value) is False
+    
+    def test_create_integrity_hash_empty_data(self):
+        """Test integrity hash with empty data."""
+        key = b"test_key_1234567890123456789012"  # 32 bytes
+        hash_value = create_integrity_hash(b"", key)
+        assert isinstance(hash_value, bytes)
+        assert len(hash_value) > 0
+        
+        # Should verify correctly
+        assert verify_integrity_hash(b"", key, hash_value) is True
+
+class TestExceptionClasses:
+    """Test custom exception classes."""
+    
+    def test_security_error(self):
+        """Test SecurityError exception."""
+        error = SecurityError("Security issue")
+        assert str(error) == "Security issue"
+        assert isinstance(error, Exception)
+    
+    def test_validation_error(self):
+        """Test ValidationError exception."""
+        error = ValidationError("Validation failed")
+        assert str(error) == "Validation failed"
+        assert isinstance(error, Exception)  # ValidationError inherits from Exception, not ValueError
+    
+    def test_rate_limit_error(self):
+        """Test RateLimitError exception."""
+        error = RateLimitError("Rate limit exceeded")
+        assert str(error) == "Rate limit exceeded"
+        assert isinstance(error, Exception)
+
+class TestFilePathEdgeCases:
+    """Test edge cases for file path validation."""
+    
+    def test_validate_file_path_nonexistent_for_write(self):
+        """Test validation of non-existent file for write operation."""
+        nonexistent_path = "test_file_that_does_not_exist.txt"
+        
+        # Should work for write mode even if file doesn't exist
+        path = validate_file_path(nonexistent_path, "write")
+        assert isinstance(path, Path)
+    
+    def test_validate_file_path_basic_traversal(self):
+        """Test basic directory traversal attempts."""
+        # Simple traversal attempts
+        with pytest.raises(ValidationError):
+            validate_file_path("../config", "read")
     """Test file path validation."""
     
     def test_validate_file_path_valid(self):

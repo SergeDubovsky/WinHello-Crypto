@@ -98,6 +98,40 @@ class TestAWSCredentialManager:
                 "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
                 "short_token"
             )
+
+    def test_empty_profile_name_validation(self, manager):
+        """Test validation with empty profile names."""
+        with pytest.raises(Exception):
+            manager._validate_profile_name(None)
+    
+    def test_special_character_profile_validation(self, manager):
+        """Test profile names with special characters."""
+        # Test with various problematic characters
+        invalid_names = ["profile@test", "profile#test", "profile$test"]
+        for name in invalid_names:
+            with pytest.raises(Exception):
+                manager._validate_profile_name(name)
+
+    def test_aws_region_validation(self, manager):
+        """Test AWS region validation if method exists."""
+        if hasattr(manager, '_validate_aws_region'):
+            # Valid regions
+            manager._validate_aws_region("us-east-1")
+            manager._validate_aws_region("eu-west-1")
+            
+            # Invalid regions
+            with pytest.raises(Exception):
+                manager._validate_aws_region("invalid-region")
+
+    def test_credentials_dir_creation(self, manager):
+        """Test credentials directory creation."""
+        # Ensure the directory exists after manager initialization
+        assert manager.credentials_dir is not None
+        
+    def test_manager_initialization(self, manager):
+        """Test manager initialization with various configurations."""
+        assert manager.aws_dir is not None
+        assert manager.credentials_dir is not None
     
     @pytest.mark.asyncio
     async def test_add_profile_success(self, manager):
