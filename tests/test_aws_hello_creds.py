@@ -620,18 +620,18 @@ class TestFileEncryptionDecryption:
         mock_config.has_section.return_value = True
         mock_config.items.return_value = [('region', 'us-east-1'), ('output', 'json')]
         
-        # Mock the encryption and file operations to avoid path validation issues
+        # Mock the entire encryption process to avoid file system operations
         with patch('configparser.RawConfigParser') as mock_config_class, \
-             patch.object(manager.encryptor, 'encrypt_data', return_value=b'encrypted_data'), \
-             patch('pathlib.Path.write_bytes') as mock_write, \
-             patch('shutil.move') as mock_move:
+             patch.object(manager.encryptor, 'encrypt_file', return_value=None), \
+             patch('shutil.move') as mock_move, \
+             patch('pathlib.Path.write_text') as mock_write_text:
             
             mock_config_class.return_value = mock_config
             
             await manager.encrypt_aws_profile("test-profile")
             
-            # Check that write_bytes was called (file was written)
-            mock_write.assert_called()
+            # Check that encrypt_file was called
+            manager.encryptor.encrypt_file.assert_called()
     
     @pytest.mark.asyncio
     async def test_encrypt_aws_profile_with_delete(self, manager_with_files):
@@ -647,17 +647,17 @@ class TestFileEncryptionDecryption:
         
         # Mock the encryption and file operations to avoid path validation issues  
         with patch('configparser.RawConfigParser') as mock_config_class, \
-             patch.object(manager.encryptor, 'encrypt_data', return_value=b'encrypted_data'), \
-             patch('pathlib.Path.write_bytes') as mock_write, \
+             patch.object(manager.encryptor, 'encrypt_file', return_value=None), \
              patch('shutil.move') as mock_move, \
+             patch('pathlib.Path.write_text') as mock_write_text, \
              patch('pathlib.Path.open', MagicMock()):
             
             mock_config_class.return_value = mock_config
             
             await manager.encrypt_aws_profile("test-profile", delete_plain=True)
             
-            # Check that write operations were called
-            mock_write.assert_called()
+            # Check that encrypt_file was called
+            manager.encryptor.encrypt_file.assert_called()
             mock_config.remove_section.assert_called_with('profile test-profile')
     
     @pytest.mark.asyncio
