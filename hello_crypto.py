@@ -9,9 +9,10 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding, hashes, hmac
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 
 try:
@@ -48,11 +49,11 @@ except ImportError:
 # Import security utilities
 from security_utils import (
     SecurityError, ValidationError, RateLimitError, rate_limiter,
-    audit_log, validate_file_path, secure_memory_clear, 
-    sanitize_error_message, constant_time_compare
+    audit_log, validate_file_path, secure_memory_clear,
+    sanitize_error_message
 )
 from security_config import (
-    AES_BLOCK_SIZE, AES_KEY_SIZE, PBKDF2_ITERATIONS, 
+    AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE, AES_KEY_SIZE, PBKDF2_ITERATIONS,
     KEY_NAME_FILE, CHALLENGE_MESSAGE, SECURITY_EVENTS
 )
 
@@ -368,85 +369,48 @@ class FileEncryptor:
             raise WindowsHelloError(f"Failed to derive key: {sanitize_error_message(e, 'key derivation')}")
     
     def encrypt_data(self, data: bytes, key: bytes) -> bytes:
-        """Encrypt data using AES-256-CBC with proper PKCS7 padding and integrity protection."""
+        """Encrypt data using AES-256-GCM providing confidentiality and integrity."""
         if len(key) != AES_KEY_SIZE:
             raise ValueError(f"Key must be {AES_KEY_SIZE} bytes")
-        
+
         if len(data) == 0:
             raise ValueError("Cannot encrypt empty data")
-        
-        # Generate cryptographically secure random IV
-        iv = secrets.token_bytes(AES_BLOCK_SIZE)
 
-        # Pad data using PKCS7
-        padder = padding.PKCS7(AES_BLOCK_SIZE * 8).padder()
-        padded_data = padder.update(data) + padder.finalize()
+        # Generate cryptographically secure random nonce
+        nonce = secrets.token_bytes(AES_GCM_NONCE_SIZE)
 
-        # Encrypt using AES-256-CBC
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        encryptor = cipher.encryptor()
-        ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+        aead = AESGCM(key)
+        ciphertext = aead.encrypt(nonce, data, None)  # ciphertext includes authentication tag
 
-        # Calculate HMAC for integrity protection over IV + ciphertext
-        hmac_key = hashlib.sha256(key + b"hmac_key_derivation").digest()
-        h = hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
-        h.update(iv + ciphertext)
-        data_hmac = h.finalize()
-
-        # Return IV + ciphertext + HMAC
-        result = iv + ciphertext + data_hmac
-        return result
+        # Return nonce + ciphertext (which already includes tag)
+        return nonce + ciphertext
     
     def decrypt_data(self, data: bytes, key: bytes) -> bytes:
-        """Decrypt data using AES-256-CBC with integrity verification."""
+        """Decrypt data using AES-256-GCM with integrity verification."""
         if len(key) != AES_KEY_SIZE:
             raise ValueError(f"Key must be {AES_KEY_SIZE} bytes")
-        
-        if len(data) < AES_BLOCK_SIZE + 32:  # IV + minimum HMAC + data
+
+        if len(data) < AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE:
             raise ValueError("Invalid encrypted data: too short")
 
-        # Extract IV, ciphertext, and HMAC
-        iv = data[:AES_BLOCK_SIZE]
-        stored_hmac = data[-32:]
-        ciphertext = data[AES_BLOCK_SIZE:-32]
+        # Extract nonce and ciphertext (which includes the tag)
+        nonce = data[:AES_GCM_NONCE_SIZE]
+        ciphertext = data[AES_GCM_NONCE_SIZE:]
 
-        if len(ciphertext) == 0:
-            raise ValueError("Invalid encrypted data: missing ciphertext")
-
-        # Verify HMAC integrity before decryption
-        hmac_key = hashlib.sha256(key + b"hmac_key_derivation").digest()
-        h = hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
-        h.update(iv + ciphertext)
-        expected_hmac = h.finalize()
-
-        # Constant-time comparison to prevent timing attacks
-        if not constant_time_compare(stored_hmac, expected_hmac):
+        aead = AESGCM(key)
+        try:
+            plaintext = aead.decrypt(nonce, ciphertext, None)
+        except InvalidTag:
             audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
                 'error': 'integrity_check_failed'
             })
             raise ValueError("Data integrity check failed - file may be corrupted or tampered with")
-
-        # Decrypt using AES-256-CBC
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        decryptor = cipher.decryptor()
-        try:
-            padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
         except Exception as e:
             audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
                 'error': 'decryption_failed',
                 'details': 'cipher_decryption_error'
             })
             raise ValueError(f"Decryption failed: {sanitize_error_message(e, 'decryption')}")
-
-        # Remove PKCS7 padding
-        unpadder = padding.PKCS7(AES_BLOCK_SIZE * 8).unpadder()
-        try:
-            plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
-        except Exception as e:
-            audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
-                'error': 'padding_removal_failed'
-            })
-            raise ValueError("Invalid padding - data may be corrupted")
 
         logger.debug(f"Decryption completed, output size: {len(plaintext)} bytes")
         return plaintext

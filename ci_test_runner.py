@@ -16,7 +16,7 @@ def test_imports():
         sys.path.insert(0, '.')
         
         # Test security modules (should work on all platforms)
-        from security_config import AES_KEY_SIZE, AES_BLOCK_SIZE
+        from security_config import AES_KEY_SIZE, AES_GCM_NONCE_SIZE
         print(f"[PASS] security_config imported (AES_KEY_SIZE={AES_KEY_SIZE})")
         
         from security_utils import ValidationError, SecurityError
