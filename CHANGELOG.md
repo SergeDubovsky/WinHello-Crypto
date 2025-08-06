@@ -37,16 +37,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 
-- **Updated**: `cryptography>=45.0.6,<46.0.0` (security updates)
-- **Updated**: `pytest>=8.3.0,<9.0.0` (latest stable testing framework)
-- **Updated**: `pytest-asyncio>=0.24.0,<1.0.0` (async test improvements)
-- **Updated**: `pytest-cov>=5.0.0,<6.0.0` (coverage reporting)
-- **Updated**: `black>=24.0.0,<25.0.0` (code formatting)
-- **Updated**: `flake8>=7.1.0,<8.0.0` (linting)
-- **Updated**: `mypy>=1.11.0,<2.0.0` (type checking)
-- **Updated**: `safety>=3.2.0,<3.3.0` (security scanning)
-- **Updated**: `sphinx>=7.0.0,<8.0.0` (documentation)
+- **Updated**: `cryptography>=45.0.6,<46.0.0` (security updates and performance improvements)
+- **Updated**: `pytest>=8.3.0,<9.0.0` (latest stable testing framework with improved async support)
+- **Updated**: `pytest-asyncio>=0.24.0,<1.0.0` (async test improvements and reliability)
+- **Updated**: `pytest-cov>=6.0.0,<7.0.0` (enhanced coverage reporting)
+- **Updated**: `black>=25.1.0,<26.0.0` (latest code formatting with improved Python 3.13 support)
+- **Updated**: `flake8>=7.3.0,<8.0.0` (improved linting capabilities)
+- **Updated**: `mypy>=1.17.1,<2.0.0` (enhanced type checking with latest Python support)
+- **Updated**: `bandit>=1.8.6,<2.0.0` (security scanning with improved detection)
+- **Updated**: `safety>=3.2.0,<3.3.0` (vulnerability scanning)
+- **Updated**: `sphinx>=7.0.0,<8.0.0` (documentation generation)
 - **Updated**: `sphinx-rtd-theme>=2.0.0,<3.0.0` (documentation theme)
+- **Fixed**: WinRT package dependencies - migrated from single `pywinrt` to individual packages
+- **Added**: `winrt-runtime>=3.2.0,<4.0.0` for core Windows Runtime support
+- **Added**: `winrt-Windows.Security.Credentials>=3.2.0,<4.0.0` for Windows Hello integration
+- **Added**: `winrt-Windows.Storage.Streams>=3.2.0,<4.0.0` for secure data handling
 - **Added**: `psutil>=5.9.0,<6.0.0` for enhanced shell detection capabilities
 
 ## Previous Versions
