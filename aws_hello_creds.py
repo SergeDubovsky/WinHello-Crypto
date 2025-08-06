@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+import configparser
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional, Union, List, Tuple
@@ -174,81 +175,86 @@ class AWSCredentialManager:
         """Update the AWS config file with credential_process."""
         try:
             config_file = self.aws_dir / "config"
-            
-            # Read existing config
-            config_content = ""
+
+            config_text = ""
             if config_file.exists():
                 try:
-                    config_content = config_file.read_text(encoding='utf-8')
+                    config_text = config_file.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
                     logger.warning("AWS config file has encoding issues, treating as empty")
-                    config_content = ""
-                    
-            # Profile section name
-            profile_section = f"[profile {profile_name}]"
-            
-            # Use console script if available, fallback to Python path
+                    config_text = ""
+
+            parser = configparser.RawConfigParser()
+            parser.optionxform = str
+            if config_text:
+                try:
+                    parser.read_string(config_text)
+                except configparser.Error:
+                    logger.warning("AWS config file is malformed, starting with empty config")
+
+            section_name = f"profile {profile_name}"
+            if not parser.has_section(section_name):
+                parser.add_section(section_name)
+
             try:
-                # Check if we're running from installed package
                 import shutil
-                if shutil.which('aws-hello-creds'):
-                    credential_process = f'credential_process = aws-hello-creds get-credentials --profile {profile_name}'
+                if shutil.which("aws-hello-creds"):
+                    cp_cmd = f"aws-hello-creds get-credentials --profile {profile_name}"
                 else:
-                    # Fallback to direct script path
                     script_path = Path(__file__).absolute()
-                    credential_process = f'credential_process = python "{script_path}" get-credentials --profile {profile_name}'
+                    cp_cmd = f"python \"{script_path}\" get-credentials --profile {profile_name}"
             except Exception:
-                # Fallback to direct script path
                 script_path = Path(__file__).absolute()
-                credential_process = f'credential_process = python "{script_path}" get-credentials --profile {profile_name}'
-            
-            # Parse and update config more robustly
-            lines = config_content.split('\n') if config_content else []
-            new_lines = []
-            in_target_profile = False
-            profile_found = False
-            
-            for line in lines:
-                line_stripped = line.strip()
-                
-                if line_stripped == profile_section:
-                    in_target_profile = True
-                    profile_found = True
-                    new_lines.append(line)
-                    new_lines.append(credential_process)
-                    if region:
-                        new_lines.append(f"region = {region}")
-                    new_lines.append("output = json")
-                    continue
-                elif line_stripped.startswith('[') and in_target_profile:
-                    in_target_profile = False
-                
-                # Skip existing credential_process, region, and output lines for this profile
-                if in_target_profile and any(line_stripped.startswith(prefix) for prefix in 
-                                           ['credential_process =', 'region =', 'output =']):
-                    continue
-                    
-                if not in_target_profile:
-                    new_lines.append(line)
-                    
-            # If profile wasn't found, add it
-            if not profile_found:
-                if new_lines and new_lines[-1].strip():
-                    new_lines.append("")  # Add blank line before new profile
-                new_lines.append(profile_section)
-                new_lines.append(credential_process)
-                if region:
-                    new_lines.append(f"region = {region}")
-                new_lines.append("output = json")
-                
-            # Write updated config atomically
-            temp_config = config_file.with_suffix('.tmp')
-            temp_config.write_text('\n'.join(new_lines), encoding='utf-8')
+                cp_cmd = f"python \"{script_path}\" get-credentials --profile {profile_name}"
+
+            parser.set(section_name, "credential_process", cp_cmd)
+            if region:
+                parser.set(section_name, "region", region)
+            else:
+                if parser.has_option(section_name, "region"):
+                    parser.remove_option(section_name, "region")
+            parser.set(section_name, "output", "json")
+
+            lines = config_text.splitlines()
+            section_header = f"[profile {profile_name}]"
+            start = end = None
+            for idx, line in enumerate(lines):
+                if line.strip() == section_header:
+                    start = idx
+                    end = idx + 1
+                    while end < len(lines) and not (
+                        lines[end].strip().startswith("[") and lines[end].strip().endswith("]")
+                    ):
+                        end += 1
+                    break
+
+            items = parser.items(section_name)
+
+            if start is not None:
+                preserved = [
+                    l for l in lines[start + 1 : end]
+                    if l.strip().startswith("#") or l.strip().startswith(";") or l.strip() == ""
+                ]
+                new_section = [section_header]
+                new_section.extend(preserved)
+                for key, value in items:
+                    new_section.append(f"{key} = {value}")
+                lines = lines[:start] + new_section + lines[end:]
+            else:
+                if lines and lines[-1].strip():
+                    lines.append("")
+                new_section = [section_header]
+                for key, value in items:
+                    new_section.append(f"{key} = {value}")
+                lines.extend(new_section)
+
+            temp_config = config_file.with_suffix(".tmp")
+            temp_config.write_text("\n".join(lines) + "\n", encoding="utf-8")
             temp_config.replace(config_file)
-            
+
             logger.info(f"AWS config updated for profile '{profile_name}'")
             print(f"✅ AWS config updated for profile '{profile_name}'.")
-            
+
         except Exception as e:
             logger.error(f"Failed to update AWS config: {e}")
             raise WindowsHelloError(f"Failed to update AWS config: {e}")
