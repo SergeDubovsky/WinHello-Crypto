@@ -186,11 +186,20 @@ class AWSCredentialManager:
             # Profile section name
             profile_section = f"[profile {profile_name}]"
             
-            # Get the path to this script
-            script_path = Path(__file__).absolute()
-            
-            # Credential process command (escape Windows paths properly)
-            credential_process = f'credential_process = python "{script_path}" get-credentials --profile {profile_name}'
+            # Use console script if available, fallback to Python path
+            try:
+                # Check if we're running from installed package
+                import shutil
+                if shutil.which('aws-hello-creds'):
+                    credential_process = f'credential_process = aws-hello-creds get-credentials --profile {profile_name}'
+                else:
+                    # Fallback to direct script path
+                    script_path = Path(__file__).absolute()
+                    credential_process = f'credential_process = python "{script_path}" get-credentials --profile {profile_name}'
+            except Exception:
+                # Fallback to direct script path
+                script_path = Path(__file__).absolute()
+                credential_process = f'credential_process = python "{script_path}" get-credentials --profile {profile_name}'
             
             # Parse and update config more robustly
             lines = config_content.split('\n') if config_content else []
