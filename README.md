@@ -8,11 +8,11 @@
 [![Python](https://img.shields.io/badge/Python-3.7%2B-yellow.svg)](https://github.com/SergeDubovsky/WinHello-Crypto)
 [![License](https://img.shields.io/badge/License-Apache%202.0-red.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/blob/main/LICENSE)
 
-**🔐 Enterprise-Grade AWS Credential Security with Windows Hello Biometric Authentication**
+**Enterprise-Grade AWS Credential Security with Windows Hello Biometric Authentication**
 
 A revolutionary approach to AWS credential management that **eliminates plaintext storage vulnerabilities** by leveraging Windows Hello's hardware-backed biometric authentication. This tool transforms credential security from a liability into a robust, user-friendly protection layer.
 
-## 🚨 The Problem We Solve
+## The Problem We Solve
 
 Traditional AWS credential storage methods expose organizations to significant security risks:
 - **Plaintext credentials** in `~/.aws/credentials` files
@@ -22,17 +22,18 @@ Traditional AWS credential storage methods expose organizations to significant s
 - **Credential theft** from compromised developer machines
 - **No audit trail** for credential access
 
-## 💡 Our Solution
+## Our Solution
 
 WinHello-Crypto provides **hardware-backed credential protection** that:
-- ✅ **Eliminates plaintext storage** - Zero credentials stored in readable format
-- ✅ **Requires biometric authentication** - Each access needs fingerprint/face/PIN
-- ✅ **Provides seamless integration** - Works transparently with existing AWS CLI workflows
-- ✅ **Offers enterprise-grade encryption** - AES-256 + PBKDF2 + HMAC integrity protection
-- ✅ **Ensures memory safety** - Secure clearing of sensitive data from memory
-- ✅ **Maintains audit trails** - Comprehensive logging without credential exposure
 
-## 🛡️ Security Impact & Benefits
+- **Eliminates plaintext storage** - Zero credentials stored in readable format
+- **Requires biometric authentication** - Each access needs fingerprint/face/PIN
+- **Provides seamless integration** - Works transparently with existing AWS CLI workflows
+- **Offers enterprise-grade encryption** - AES-256 + PBKDF2 + HMAC integrity protection
+- **Ensures memory safety** - Secure clearing of sensitive data from memory
+- **Maintains audit trails** - Comprehensive logging without credential exposure
+
+## Security Impact & Benefits
 
 ### **Before WinHello-Crypto:**
 ```bash
@@ -53,29 +54,30 @@ $ aws s3 ls --profile my-secure-profile
 ```
 
 ### **Quantified Security Improvements:**
-- **🔥 100% reduction** in plaintext credential exposure
-- **🔒 Hardware-backed protection** using TPM/Secure Enclave
-- **⚡ Real-time biometric verification** for each access
-- **🛡️ OWASP-compliant** secure coding practices
-- **📊 Enterprise audit trails** without credential leakage
-- **💾 Memory-safe operations** with secure data clearing
+
+- **100% reduction** in plaintext credential exposure
+- **Hardware-backed protection** using TPM/Secure Enclave
+- **Real-time biometric verification** for each access
+- **OWASP-compliant** secure coding practices
+- **Enterprise audit trails** without credential leakage
+- **Memory-safe operations** with secure data clearing
 
 ## Features
 
-- 🔐 **Biometric Authentication**: Uses Windows Hello for secure key derivation
-- 🛡️ **Strong Encryption**: AES-256-CBC with PKCS7 padding
-- 🔑 **Hardware-Backed Security**: Encryption keys derived from Windows Hello signatures
-- 🧹 **Memory Safety**: Secure memory clearing of sensitive data
-- 📁 **File Operations**: Encrypt and decrypt any file type
-- ☁️ **AWS Credentials Manager**: Securely store and retrieve AWS credentials
-- 🔄 **AWS CLI Integration**: Seamless integration with AWS CLI credential_process
-- 🌐 **Environment Variable Support**: Set AWS credentials as environment variables for shell sessions
-- 🖥️ **Multi-Shell Support**: Automatic detection of PowerShell, CMD, and Bash shells
-- 🎯 **Enhanced UX**: Automatic Windows Hello dialog activation for seamless biometric authentication
-- 🔄 **Credential Rotation**: Comprehensive rotation system with automatic backups and rollback support
-- 📅 **Backup Management**: Encrypted backup storage with timestamped restore points
-- 🔍 **Rotation Monitoring**: Automatic detection of aging credentials with rotation recommendations
-- ⚡ **Async Operations**: Non-blocking file operations
+- **Biometric Authentication**: Uses Windows Hello for secure key derivation
+- **Strong Encryption**: AES-256-CBC with PKCS7 padding
+- **Hardware-Backed Security**: Encryption keys derived from Windows Hello signatures
+- **Memory Safety**: Secure memory clearing of sensitive data
+- **File Operations**: Encrypt and decrypt any file type
+- **AWS Credentials Manager**: Securely store and retrieve AWS credentials
+- **AWS CLI Integration**: Seamless integration with AWS CLI credential_process
+- **Environment Variable Support**: Set AWS credentials as environment variables for shell sessions
+- **Multi-Shell Support**: Automatic detection of PowerShell, CMD, and Bash shells
+- **Enhanced UX**: Automatic Windows Hello dialog activation for seamless biometric authentication
+- **Credential Rotation**: Comprehensive rotation system with automatic backups and rollback support
+- **Backup Management**: Encrypted backup storage with timestamped restore points
+- **Rotation Monitoring**: Automatic detection of aging credentials with rotation recommendations
+- **Async Operations**: Non-blocking file operations
 
 ## Components
 
@@ -240,6 +242,7 @@ aws-hello-creds check-rotation my-profile
 ```
 
 This command analyzes credential age and provides recommendations:
+
 - **Session tokens**: Warns after 30 minutes (typical expiration: 1-12 hours)
 - **Long-term credentials**: Warns after 90 days (security best practice)
 
@@ -260,6 +263,7 @@ aws-hello-creds rotate-credentials my-profile --type manual \
 ```
 
 **Rotation Types:**
+
 - `auto`: Automatically detects whether credentials are temporary or long-term
 - `manual`: Use provided new credentials immediately
 - `temporary`: Guidance for rotating session tokens
@@ -281,10 +285,11 @@ aws-hello-creds restore-backup my-profile 20250806_143000
 ```
 
 **Security Features:**
-- 🔐 **Encrypted Backups**: All backups use the same Windows Hello encryption
-- 📅 **Timestamped**: Each backup includes creation timestamp and metadata
-- 🔄 **Rollback Support**: Easy restoration from any backup point
-- 🛡️ **Audit Trail**: All rotation activities are logged for compliance
+
+- **Encrypted Backups**: All backups use the same Windows Hello encryption
+- **Timestamped**: Each backup includes creation timestamp and metadata
+- **Rollback Support**: Easy restoration from any backup point
+- **Audit Trail**: All rotation activities are logged for compliance
 
 ### Windows Batch Integration
 

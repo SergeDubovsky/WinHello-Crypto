@@ -61,15 +61,18 @@ class TestFileValidation:
     
     def test_validate_file_path_valid(self):
         base_dir = Path.cwd()
-        with tempfile.NamedTemporaryFile(dir=base_dir, suffix='.txt', delete=False) as f:
-            rel_path = os.path.relpath(f.name, start=base_dir)
-            try:
+        temp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=base_dir, suffix='.txt', delete=False) as f:
+                temp_file = f.name
+                rel_path = os.path.relpath(f.name, start=base_dir)
                 path = validate_file_path(rel_path, "read")
                 assert isinstance(path, Path)
-            finally:
+        finally:
+            if temp_file and os.path.exists(temp_file):
                 try:
-                    os.unlink(f.name)
-                except PermissionError:
+                    os.unlink(temp_file)
+                except (PermissionError, OSError):
                     pass  # File might still be in use, that's ok for the test
     
     def test_validate_file_path_blocked_extension(self):
@@ -87,8 +90,10 @@ class TestFileValidation:
     
     def test_validate_file_path_large_file(self):
         base_dir = Path.cwd()
-        with tempfile.NamedTemporaryFile(dir=base_dir, suffix='.txt', delete=False) as f:
-            try:
+        temp_file = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=base_dir, suffix='.txt', delete=False) as f:
+                temp_file = f.name
                 # Write a large file
                 f.write(b'x' * (101 * 1024 * 1024))  # 101MB
                 f.flush()
@@ -96,10 +101,11 @@ class TestFileValidation:
                 rel_path = os.path.relpath(f.name, start=base_dir)
                 with pytest.raises(ValidationError, match="File too large"):
                     validate_file_path(rel_path, "read")
-            finally:
+        finally:
+            if temp_file and os.path.exists(temp_file):
                 try:
-                    os.unlink(f.name)
-                except PermissionError:
+                    os.unlink(temp_file)
+                except (PermissionError, OSError):
                     pass  # File might still be in use, that's ok for the test
 
 class TestAWSValidation:
