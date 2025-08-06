@@ -95,6 +95,18 @@ Specialized tool for managing AWS credentials with Windows Hello encryption, des
 
 ## Installation
 
+### From PyPI (Recommended)
+
+Install the latest stable version from PyPI:
+
+```bash
+pip install winhello-crypto
+```
+
+This provides the `aws-hello-creds` and `winhello-crypto` console scripts.
+
+### From Source
+
 1. Clone the repository:
 
 ```bash
@@ -122,13 +134,13 @@ Store AWS credentials securely with Windows Hello encryption:
 
 ```bash
 # Add long-term credentials
-python aws_hello_creds.py add-profile my-profile \
+aws-hello-creds add-profile my-profile \
     --access-key AKIA1234567890EXAMPLE \
     --secret-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     --region us-east-1
 
 # Add temporary credentials (with session token)
-python aws_hello_creds.py add-profile temp-profile \
+aws-hello-creds add-profile temp-profile \
     --access-key AKIA1234567890EXAMPLE \
     --secret-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
     --session-token IQoJb3JpZ2luX2VjEHoaCXVzLWVhc3QtMSJIMEYCIQD... \
@@ -143,7 +155,7 @@ After adding a profile, it's automatically configured in `~/.aws/config` with a 
 
 ```ini
 [profile my-profile]
-credential_process = python "C:\Project\WinHello-Crypto\aws_hello_creds.py" get-credentials --profile my-profile
+credential_process = aws-hello-creds get-credentials --profile my-profile
 region = us-east-1
 output = json
 ```
@@ -164,7 +176,7 @@ For scenarios where you need to run multiple AWS CLI commands in a session, use 
 
 ```powershell
 # PowerShell - Set environment variables with automatic shell detection
-python aws_hello_creds.py set-env my-profile | Invoke-Expression
+aws-hello-creds set-env my-profile | Invoke-Expression
 
 # Now run multiple commands without additional authentication
 aws s3 ls
@@ -174,7 +186,7 @@ aws lambda list-functions
 
 ```cmd
 REM Command Prompt - Set environment variables
-for /f "delims=" %i in ('python aws_hello_creds.py set-env my-profile') do %i
+for /f "delims=" %i in ('aws-hello-creds set-env my-profile') do %i
 
 REM Now run multiple commands
 aws s3 ls
@@ -183,7 +195,7 @@ aws ec2 describe-instances
 
 ```bash
 # Bash/WSL - Set environment variables
-eval "$(python aws_hello_creds.py set-env my-profile)"
+eval "$(aws-hello-creds set-env my-profile)"
 
 # Now run multiple commands
 aws s3 ls
@@ -196,21 +208,21 @@ The tool automatically detects your shell type (PowerShell, CMD, Bash) and outpu
 
 ```bash
 # List all encrypted profiles
-python aws_hello_creds.py list-profiles
+aws-hello-creds list-profiles
 
 # Remove a profile
-python aws_hello_creds.py remove-profile old-profile
+aws-hello-creds remove-profile old-profile
 
 # Test credential retrieval (outputs JSON for credential_process)
-python aws_hello_creds.py get-credentials --profile my-profile
+aws-hello-creds get-credentials --profile my-profile
 
 # Set environment variables for shell session
-python aws_hello_creds.py set-env my-profile
+aws-hello-creds set-env my-profile
 
 # Specify shell type explicitly (auto-detection is usually sufficient)
-python aws_hello_creds.py set-env my-profile --shell powershell
-python aws_hello_creds.py set-env my-profile --shell cmd
-python aws_hello_creds.py set-env my-profile --shell bash
+aws-hello-creds set-env my-profile --shell powershell
+aws-hello-creds set-env my-profile --shell cmd
+aws-hello-creds set-env my-profile --shell bash
 ```
 
 ### Credential Rotation
@@ -221,7 +233,7 @@ WinHello-Crypto includes comprehensive credential rotation capabilities for enha
 
 ```bash
 # Check if credentials need rotation
-python aws_hello_creds.py check-rotation my-profile
+aws-hello-creds check-rotation my-profile
 ```
 
 This command analyzes credential age and provides recommendations:
@@ -232,15 +244,15 @@ This command analyzes credential age and provides recommendations:
 
 ```bash
 # Auto-rotate (automatically detects credential type)
-python aws_hello_creds.py rotate-credentials my-profile
+aws-hello-creds rotate-credentials my-profile
 
 # Manual rotation with new credentials
-python aws_hello_creds.py rotate-credentials my-profile --type manual \
+aws-hello-creds rotate-credentials my-profile --type manual \
   --access-key AKIA1234567890EXAMPLE \
   --secret-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 # Rotate temporary credentials
-python aws_hello_creds.py rotate-credentials my-profile --type manual \
+aws-hello-creds rotate-credentials my-profile --type manual \
   --access-key AKIA... --secret-key SECRET... --session-token TOKEN...
 ```
 
@@ -256,13 +268,13 @@ All credential rotations automatically create backups before making changes:
 
 ```bash
 # List all available backups
-python aws_hello_creds.py list-backups
+aws-hello-creds list-backups
 
 # List backups for specific profile
-python aws_hello_creds.py list-backups --profile my-profile
+aws-hello-creds list-backups --profile my-profile
 
 # Restore from backup (format: YYYYMMDD_HHMMSS)
-python aws_hello_creds.py restore-backup my-profile 20250806_143000
+aws-hello-creds restore-backup my-profile 20250806_143000
 ```
 
 **Security Features:**
@@ -414,9 +426,9 @@ await encryptor.decrypt_file("input.enc", "output.txt")
 
 1. **Environment variables not set properly**
    - Ensure you're using the correct syntax for your shell:
-     - PowerShell: `python aws_hello_creds.py set-env profile | Invoke-Expression`
-     - CMD: `for /f "delims=" %i in ('python aws_hello_creds.py set-env profile') do %i`
-     - Bash: `eval "$(python aws_hello_creds.py set-env profile)"`
+     - PowerShell: `aws-hello-creds set-env profile | Invoke-Expression`
+     - CMD: `for /f "delims=" %i in ('aws-hello-creds set-env profile') do %i`
+     - Bash: `eval "$(aws-hello-creds set-env profile)"`
    - The tool auto-detects your shell, but you can specify it explicitly with `--shell`
 
 1. **Shell auto-detection issues**
