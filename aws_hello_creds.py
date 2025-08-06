@@ -96,7 +96,8 @@ class AWSCredentialManager:
             credential_data = {
                 "aws_access_key_id": access_key,
                 "aws_secret_access_key": secret_key,
-                "created_at": asyncio.get_event_loop().time(),
+                # Use wall clock time for creation timestamp
+                "created_at": time.time(),
                 "profile_name": profile_name
             }
             
