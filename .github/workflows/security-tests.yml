@@ -14,10 +14,36 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python 3.11
+    - name: Set up Python 3.13
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-security-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-security-
+          ${{ runner.os }}-pip-
+    
+    - name: Cache mypy cache
+      uses: actions/cache@v4
+      with:
+        path: .mypy_cache
+        key: ${{ runner.os }}-mypy-${{ hashFiles('**/*.py') }}
+        restore-keys: |
+          ${{ runner.os }}-mypy-
+
+    - name: Cache pytest cache
+      uses: actions/cache@v4
+      with:
+        path: .pytest_cache
+        key: ${{ runner.os }}-pytest-security-${{ hashFiles('tests/**/*.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pytest-security-
+          ${{ runner.os }}-pytest-
     
     - name: Install dependencies
       run: |
@@ -91,10 +117,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python 3.11
+    - name: Set up Python 3.13
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
     
     - name: Install dependencies
       run: |
@@ -161,10 +187,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python 3.11
+    - name: Set up Python 3.13
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
     
     - name: Check dependency versions
       run: |

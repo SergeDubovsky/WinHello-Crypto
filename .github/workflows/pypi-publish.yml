@@ -26,7 +26,25 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-test-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-test-
+          ${{ runner.os }}-pip-
+
+    - name: Cache pytest cache
+      uses: actions/cache@v4
+      with:
+        path: .pytest_cache
+        key: ${{ runner.os }}-pytest-test-${{ hashFiles('tests/**/*.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pytest-test-
+          ${{ runner.os }}-pytest-
     
     - name: Install dependencies
       run: |
@@ -86,7 +104,16 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-build-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-build-
+          ${{ runner.os }}-pip-
     
     - name: Install build dependencies
       run: |
@@ -221,7 +248,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.13'
     
     - name: Verify PyPI publication
       run: |
