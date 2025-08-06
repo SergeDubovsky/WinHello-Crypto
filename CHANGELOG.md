@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Credential Rotation System**: Comprehensive credential rotation with automatic backup and rollback capabilities
+- **Rotation Monitoring**: Automatic detection of aging credentials with smart recommendations
+- **Backup Management**: Encrypted backup storage with timestamped restore points for all credentials
+- **Rotation Types**: Support for auto, manual, temporary, and access-key rotation workflows
 - **Environment Variable Support**: New `set-env` command to output AWS credentials as environment variables for shell sessions
 - **Automatic Shell Detection**: Tool now automatically detects PowerShell, CMD, and Bash shells and formats output accordingly
 - **Enhanced Windows Hello UX**: Automatic dialog activation and biometric sensor triggering for seamless authentication
@@ -16,16 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Biometric Sensor Auto-Activation**: Simulated mouse interaction to trigger biometric sensors without manual clicking
 
 ### Enhanced
+- **Security Framework**: Enhanced credential lifecycle management with automated backup creation
+- **CLI Interface**: Added rotation commands (`check-rotation`, `rotate-credentials`, `list-backups`, `restore-backup`)
 - **User Experience**: Windows Hello dialogs now automatically activate and become responsive without manual intervention
-- **CLI Interface**: Improved help documentation with examples for all shell types
 - **Error Handling**: Better error messages and troubleshooting guidance for shell and authentication issues
 - **Documentation**: Comprehensive README updates with new features and usage patterns
+- **Audit System**: Extended logging for rotation operations and backup management
 
 ### Technical Improvements
+- **Backup System**: Encrypted, timestamped backups with metadata for all credential changes
+- **Credential Analysis**: Age detection and expiration warnings for both temporary and long-term credentials
 - **Shell Detection Algorithm**: Uses process information and environment variables for accurate shell type detection
 - **Window API Integration**: Advanced Windows API calls for reliable dialog management
 - **Asynchronous Operations**: Background tasks for dialog monitoring and activation
-- **Memory Safety**: Enhanced secure memory clearing for environment variable handling
+- **Memory Safety**: Enhanced secure memory clearing for environment variable handling and rotation operations
 
 ### Dependencies
 - **Added**: `psutil>=5.9.0,<6.0.0` for enhanced shell detection capabilities
