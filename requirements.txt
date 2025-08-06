@@ -1,8 +1,12 @@
-# WinHello-Crypto Dependen# Security scanning tools - Updated to compatible versions
+# WinHello-Crypto Dependencies
+
+# Security scanning tools - Updated to compatible versions
 bandit>=1.7.5,<2.0.0
-safety>=3.2.0,<3.3.0# Documentation tools - Updated with compatible versions
+safety>=3.2.0,<3.3.0
+
+# Documentation tools - Updated with compatible versions
 sphinx>=7.0.0,<8.0.0
-sphinx-rtd-theme>=2.0.0,<3.0.0 Security-focused dependency management with pinned versions
+sphinx-rtd-theme>=2.0.0,<3.0.0
 
 # Core cryptographic library - Updated to latest stable
 cryptography>=45.0.6,<46.0.0
