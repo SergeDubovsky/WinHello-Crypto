@@ -51,11 +51,35 @@ winhello-crypto decrypt encrypted.bin decrypted.txt
 
 ### For Future Updates
 
-To publish a new version:
+#### Automated Publishing (Recommended)
+
+WinHello-Crypto includes automated PyPI publishing via GitHub Actions:
+
+1. **Create a GitHub Release**:
+   - Go to your repository on GitHub
+   - Click "Releases" → "Create a new release"
+   - Tag version should match the version in `pyproject.toml` (e.g., `v2.1.0`)
+   - Release title: `Version 2.1.0`
+   - Describe the changes in the release notes
+   - Click "Publish release"
+
+2. **Automatic Deployment**: The GitHub Action will automatically:
+   - Build the package
+   - Run quality checks
+   - Publish to PyPI
+   - Verify the deployment
+
+#### Manual Publishing (Alternative)
+
+For manual updates:
 
 1. **Update version** in `pyproject.toml`
 2. **Build package**: `python -m build`
 3. **Upload to PyPI**: `python -m twine upload dist/*`
+
+### CI/CD Pipeline
+
+The repository includes automated PyPI publishing triggered by GitHub releases. The pipeline handles building, testing, and publishing automatically with proper security measures and verification steps.
 
 ### Package Structure
 
