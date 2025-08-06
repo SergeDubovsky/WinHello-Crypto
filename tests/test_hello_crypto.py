@@ -78,24 +78,22 @@ class TestFileEncryptor:
     @patch('hello_crypto.KeyCredentialManager')
     def test_is_supported_mock(self, mock_kcm, encryptor):
         """Test is_supported method with mocked KeyCredentialManager."""
-        # Test when manager is available
-        mock_instance = MagicMock()
-        mock_kcm.get_default_async.return_value = AsyncMock(return_value=mock_instance)
+        # Mock the is_supported_async method directly
+        mock_kcm.is_supported_async = AsyncMock(return_value=True)
         
-        # For async method, we need to handle it differently
         import asyncio
         async def test_async():
             result = await encryptor.is_supported()
             return result
         
-        # Run the async test
         result = asyncio.run(test_async())
         assert result is True
     
     @patch('hello_crypto.KeyCredentialManager')
     def test_is_supported_no_manager(self, mock_kcm, encryptor):
         """Test is_supported when no credential manager available."""
-        mock_kcm.get_default_async.return_value = AsyncMock(return_value=None)
+        # Mock is_supported_async to return False
+        mock_kcm.is_supported_async = AsyncMock(return_value=False)
         
         import asyncio
         async def test_async():
@@ -108,15 +106,16 @@ class TestFileEncryptor:
     @patch('hello_crypto.KeyCredentialManager')
     def test_is_supported_exception(self, mock_kcm, encryptor):
         """Test is_supported when exception occurs."""
-        mock_kcm.get_default_async.side_effect = Exception("Windows Hello not available")
+        # Mock is_supported_async to raise an exception
+        mock_kcm.is_supported_async = AsyncMock(side_effect=Exception("Windows Hello not available"))
         
         import asyncio
         async def test_async():
-            result = await encryptor.is_supported()
-            return result
+            # This should raise WindowsHelloError which we catch
+            with pytest.raises(Exception):  # WindowsHelloError
+                await encryptor.is_supported()
         
-        result = asyncio.run(test_async())
-        assert result is False
+        asyncio.run(test_async())
     
     def test_windows_hello_error_creation(self):
         """Test WindowsHelloError exception creation."""

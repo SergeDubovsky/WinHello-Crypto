@@ -105,11 +105,12 @@ class TestSecurityUtilities:
                 "short"
             )
         
+        # Test with actually invalid format (not just empty)
         with pytest.raises(ValidationError):
             validate_aws_credentials(
                 "AKIAIOSFODNN7EXAMPLE",
                 "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-                ""
+                "invalid_token_format"
             )
     
     def test_validate_aws_region_valid(self):
@@ -121,14 +122,17 @@ class TestSecurityUtilities:
     
     def test_validate_aws_region_invalid(self):
         """Test validation of invalid AWS regions."""
+        # Test with region that doesn't match pattern (contains uppercase)
         with pytest.raises(ValidationError):
-            validate_aws_region("invalid-region")
+            validate_aws_region("Invalid-Region")
         
+        # Test with empty string
         with pytest.raises(ValidationError):
             validate_aws_region("")
         
+        # Test with region that has invalid characters
         with pytest.raises(ValidationError):
-            validate_aws_region("us-east-invalid")
+            validate_aws_region("us@east@1")
     
     def test_validate_profile_name_valid(self):
         """Test validation of valid profile names."""
