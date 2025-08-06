@@ -2,6 +2,7 @@
 Unit tests for hello_crypto module
 """
 
+import asyncio
 import pytest
 import tempfile
 import os
@@ -131,21 +132,32 @@ class TestFileEncryptor:
             
             # Write test data
             input_file.write_bytes(test_data)
-            
-            # Mock Windows Hello operations
-            with patch.object(encryptor, 'is_supported', return_value=True), \
+
+            real_to_thread = asyncio.to_thread
+
+            async def side_effect(func, *args, **kwargs):
+                return await real_to_thread(func, *args, **kwargs)
+
+            # Mock Windows Hello operations and track async file operations
+            with patch('hello_crypto.asyncio.to_thread', new_callable=AsyncMock) as mock_to_thread, \
+                 patch.object(encryptor, 'is_supported', return_value=True), \
                  patch.object(encryptor, 'ensure_key_exists', return_value=None), \
                  patch.object(encryptor, 'derive_key_from_signature', return_value=secrets.token_bytes(AES_KEY_SIZE)):
-                
+
+                mock_to_thread.side_effect = side_effect
+
                 # Encrypt file
                 await encryptor.encrypt_file(str(input_file), str(encrypted_file))
                 assert encrypted_file.exists()
                 assert encrypted_file.read_bytes() != test_data
-                
+
                 # Decrypt file
                 await encryptor.decrypt_file(str(encrypted_file), str(decrypted_file))
                 assert decrypted_file.exists()
                 assert decrypted_file.read_bytes() == test_data
+
+                # Ensure async file operations were performed via to_thread
+                assert mock_to_thread.await_count >= 4
         finally:
             # Clean up test files
             import shutil

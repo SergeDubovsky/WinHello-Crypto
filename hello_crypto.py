@@ -469,38 +469,36 @@ class FileEncryptor:
         await self.ensure_key_exists()
         key = await self.derive_key_from_signature()
         key_array = bytearray(key)
-        
+
+        temp_output = output_file.with_suffix('.tmp')
+
         try:
             # Read input file with size validation
             if not input_file.exists():
                 raise FileNotFoundError(f"Input file not found: {input_file}")
-                
-            with open(input_file, "rb") as f:
-                plaintext = f.read()
-            
+
+            plaintext = await asyncio.to_thread(input_file.read_bytes)
+
             if len(plaintext) == 0:
                 raise ValueError("Cannot encrypt empty file")
-            
+
             # Encrypt data
             ciphertext = self.encrypt_data(plaintext, key)
-            
+
             # Write output file atomically
-            temp_output = output_file.with_suffix('.tmp')
-            with open(temp_output, "wb") as f:
-                f.write(ciphertext)
-            
+            await asyncio.to_thread(temp_output.write_bytes, ciphertext)
+
             # Atomic rename
             temp_output.replace(output_file)
-            
+
             logger.info(f"File encryption completed: {output_file.name}")
-                
+
         except Exception as e:
             audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
                 'operation': 'file_encryption',
                 'error': str(e)[:100]
             })
             # Clean up temporary file if it exists
-            temp_output = Path(str(output_path) + '.tmp')
             if temp_output.exists():
                 temp_output.unlink()
             raise
@@ -525,38 +523,36 @@ class FileEncryptor:
         await self.ensure_key_exists()
         key = await self.derive_key_from_signature()
         key_array = bytearray(key)
-        
+
+        temp_output = output_file.with_suffix('.tmp')
+
         try:
             # Read input file with validation
             if not input_file.exists():
                 raise FileNotFoundError(f"Input file not found: {input_file}")
-                
-            with open(input_file, "rb") as f:
-                ciphertext = f.read()
-            
+
+            ciphertext = await asyncio.to_thread(input_file.read_bytes)
+
             if len(ciphertext) == 0:
                 raise ValueError("Cannot decrypt empty file")
-            
+
             # Decrypt data
             plaintext = self.decrypt_data(ciphertext, key)
-            
+
             # Write output file atomically
-            temp_output = output_file.with_suffix('.tmp')
-            with open(temp_output, "wb") as f:
-                f.write(plaintext)
-            
+            await asyncio.to_thread(temp_output.write_bytes, plaintext)
+
             # Atomic rename
             temp_output.replace(output_file)
-            
+
             logger.info(f"File decryption completed: {output_file.name}")
-                
+
         except Exception as e:
             audit_log(SECURITY_EVENTS['SECURITY_ERROR'], {
                 'operation': 'file_decryption',
                 'error': str(e)[:100]
             })
             # Clean up temporary file if it exists
-            temp_output = Path(str(output_path) + '.tmp')
             if temp_output.exists():
                 temp_output.unlink()
             raise
