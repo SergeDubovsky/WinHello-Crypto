@@ -13,6 +13,11 @@ import ctypes
 
 if not hasattr(ctypes, "windll"):
     ctypes.windll = MagicMock()
+if hasattr(ctypes, "windll"):
+    if not hasattr(ctypes.windll, "user32"):
+        ctypes.windll.user32 = MagicMock()
+    if not hasattr(ctypes.windll, "kernel32"):
+        ctypes.windll.kernel32 = MagicMock()
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,7 +26,7 @@ try:
     # Import the module under test
     import aws_hello_creds
     from aws_hello_creds import AWSCredentialManager
-except ImportError as e:
+except Exception as e:
     pytest.skip(f"Could not import aws_hello_creds: {e}", allow_module_level=True)
 
 class TestAWSCredentialManager:
@@ -194,6 +199,24 @@ class TestAWSCredentialManager:
         manager._ensure_directories()
         assert manager.aws_dir.exists()
         assert manager.credentials_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_output_env_vars_failure_before_shell_detection(self, manager):
+        """Test handler when failure occurs before shell detection."""
+        import io
+        import sys
+
+        with patch.object(manager, 'get_credentials', side_effect=RuntimeError("Test error")):
+            captured_err = io.StringIO()
+            sys.stderr = captured_err
+            try:
+                with pytest.raises(SystemExit) as exc_info:
+                    await manager.output_env_vars("test-profile")
+            finally:
+                sys.stderr = sys.__stderr__
+
+        assert "[ERROR] Error setting AWS environment variables: Test error" in captured_err.getvalue()
+        assert exc_info.value.code == 1
 
 class TestCLIFunctions:
     """Test CLI functions."""
