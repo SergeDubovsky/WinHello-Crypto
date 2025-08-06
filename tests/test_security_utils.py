@@ -60,9 +60,11 @@ class TestFileValidation:
     """Test file path validation."""
     
     def test_validate_file_path_valid(self):
-        with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as f:
+        base_dir = Path.cwd()
+        with tempfile.NamedTemporaryFile(dir=base_dir, suffix='.txt', delete=False) as f:
+            rel_path = os.path.relpath(f.name, start=base_dir)
             try:
-                path = validate_file_path(f.name, "read")
+                path = validate_file_path(rel_path, "read")
                 assert isinstance(path, Path)
             finally:
                 try:
@@ -75,21 +77,25 @@ class TestFileValidation:
             validate_file_path("malicious.exe", "read")
     
     def test_validate_file_path_traversal_attempt(self):
-        # This test might not raise on Windows - that's expected
-        try:
-            validate_file_path("../../../etc/passwd", "read")
-        except ValidationError:
-            pass  # Expected on some systems
+        with pytest.raises(ValidationError):
+            validate_file_path("../etc/passwd", "read")
+
+    def test_validate_file_path_absolute_path_non_windows(self):
+        if os.name != "nt":
+            with pytest.raises(ValidationError):
+                validate_file_path("/etc/passwd", "read")
     
     def test_validate_file_path_large_file(self):
-        with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as f:
+        base_dir = Path.cwd()
+        with tempfile.NamedTemporaryFile(dir=base_dir, suffix='.txt', delete=False) as f:
             try:
                 # Write a large file
                 f.write(b'x' * (101 * 1024 * 1024))  # 101MB
                 f.flush()
-                
+
+                rel_path = os.path.relpath(f.name, start=base_dir)
                 with pytest.raises(ValidationError, match="File too large"):
-                    validate_file_path(f.name, "read")
+                    validate_file_path(rel_path, "read")
             finally:
                 try:
                     os.unlink(f.name)
