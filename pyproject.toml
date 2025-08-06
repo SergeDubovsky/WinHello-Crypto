@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "winhello-crypto"
-version = "2.1.1"
+version = "2.1.2"
 description = "Enterprise-Grade AWS Credential Security with Windows Hello Biometric Authentication"
 readme = "README.md"
 license = {text = "Apache-2.0"}
