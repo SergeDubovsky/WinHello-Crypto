@@ -13,15 +13,6 @@ on:
         options:
         - testpypi
         - pypi
-      version_increment:
-        description: 'Version increment type (if not using git tag)'
-        required: false
-        default: 'patch'
-        type: choice
-        options:
-        - patch
-        - minor
-        - major
 
 jobs:
   test:
@@ -81,65 +72,10 @@ jobs:
     - name: Determine version
       id: version
       run: |
-        # Check if we have a git tag that looks like a version
-        if git describe --tags --exact-match 2>/dev/null | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+'; then
-          # Use git tag as version (remove 'v' prefix if present)
-          VERSION=$(git describe --tags --exact-match | sed 's/^v//')
-          echo "Using git tag version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-        else
-          # Auto-increment version based on input or default to patch
-          INCREMENT_TYPE="${{ github.event.inputs.version_increment || 'patch' }}"
-          CURRENT_VERSION=$(python -c "import tomllib; import sys; f=open('pyproject.toml','rb'); config=tomllib.load(f); f.close(); print(config['project']['version'])")
-          
-          # Parse version components
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-          
-          case $INCREMENT_TYPE in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-          
-          VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "Auto-incremented version ($INCREMENT_TYPE): $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-        fi
-    
-    - name: Update pyproject.toml version
-      run: |
-        # Install tomli_w for writing TOML
-        pip install tomli_w
-        
-        # Update version in pyproject.toml
-        python -c "
-        import tomllib
-        import tomli_w
-        import os
-        
-        version = os.environ['VERSION']
-        
-        with open('pyproject.toml', 'rb') as f:
-            config = tomllib.load(f)
-        
-        config['project']['version'] = version
-        
-        with open('pyproject.toml', 'wb') as f:
-            tomli_w.dump(config, f)
-        
-        print(f'Updated pyproject.toml to version {version}')
-        "
+        VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+        echo "Using project version: $VERSION"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
     
     - name: Verify package metadata
       run: |
@@ -297,4 +233,3 @@ jobs:
         echo "### Publishing Method" >> $env:GITHUB_STEP_SUMMARY
         echo "- ✅ **Trusted Publishers**: Secure authentication without API tokens" >> $env:GITHUB_STEP_SUMMARY
         echo "- ✅ **Skip Existing**: Robust handling of duplicate uploads" >> $env:GITHUB_STEP_SUMMARY
-        echo "- ✅ **Auto-versioning**: Automatic version management" >> $env:GITHUB_STEP_SUMMARY
