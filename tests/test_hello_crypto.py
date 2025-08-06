@@ -16,7 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from hello_crypto import FileEncryptor, WindowsHelloError
-    from security_config import AES_KEY_SIZE, AES_BLOCK_SIZE
+    from security_config import (
+        AES_KEY_SIZE, AES_BLOCK_SIZE,
+        ARGON2_TIME_COST, ARGON2_MEMORY_COST, ARGON2_PARALLELISM,
+    )
+    from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 except ImportError as e:
     pytest.skip(f"Could not import hello_crypto modules: {e}", allow_module_level=True)
 
@@ -29,7 +33,16 @@ class TestFileEncryptor:
     
     @pytest.fixture
     def test_key(self):
-        return secrets.token_bytes(AES_KEY_SIZE)
+        password = b"test_password"
+        salt = b"test_salt_123456"  # 16 bytes
+        kdf = Argon2id(
+            salt=salt,
+            length=AES_KEY_SIZE,
+            iterations=ARGON2_TIME_COST,
+            lanes=ARGON2_PARALLELISM,
+            memory_cost=ARGON2_MEMORY_COST,
+        )
+        return kdf.derive(password)
     
     def test_encrypt_decrypt_data_roundtrip(self, encryptor, test_key):
         """Test that encryption and decryption work correctly."""
@@ -116,7 +129,7 @@ class TestFileEncryptor:
             await encryptor.encrypt_file("nonexistent.txt", "output.enc")
     
     @pytest.mark.asyncio
-    async def test_encrypt_decrypt_file_roundtrip(self, encryptor):
+    async def test_encrypt_decrypt_file_roundtrip(self, encryptor, test_key):
         """Test file encryption and decryption roundtrip (mocked Windows Hello)."""
         # Create test data
         test_data = b"This is test file content for encryption testing."
@@ -142,7 +155,7 @@ class TestFileEncryptor:
             with patch('hello_crypto.asyncio.to_thread', new_callable=AsyncMock) as mock_to_thread, \
                  patch.object(encryptor, 'is_supported', return_value=True), \
                  patch.object(encryptor, 'ensure_key_exists', return_value=None), \
-                 patch.object(encryptor, 'derive_key_from_signature', return_value=secrets.token_bytes(AES_KEY_SIZE)):
+                 patch.object(encryptor, 'derive_key_from_signature', return_value=test_key):
 
                 mock_to_thread.side_effect = side_effect
 
@@ -188,7 +201,16 @@ class TestErrorHandling:
     
     @pytest.fixture
     def test_key(self):
-        return secrets.token_bytes(AES_KEY_SIZE)
+        password = b"error_test_password"
+        salt = b"error_test_salt__"  # 16 bytes
+        kdf = Argon2id(
+            salt=salt,
+            length=AES_KEY_SIZE,
+            iterations=ARGON2_TIME_COST,
+            lanes=ARGON2_PARALLELISM,
+            memory_cost=ARGON2_MEMORY_COST,
+        )
+        return kdf.derive(password)
     
     def test_windows_hello_error(self):
         """Test WindowsHelloError exception."""
@@ -213,9 +235,8 @@ class TestErrorHandling:
                 except Exception:
                     pass  # Expected to fail
     
-    def test_data_validation_edge_cases(self, encryptor):
+    def test_data_validation_edge_cases(self, encryptor, test_key):
         """Test edge cases in data validation."""
-        test_key = secrets.token_bytes(AES_KEY_SIZE)
         
         # Test with various data sizes
         for size in [1, 15, 16, 17, 31, 32, 33, 1000]:

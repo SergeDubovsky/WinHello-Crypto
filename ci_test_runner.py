@@ -73,10 +73,17 @@ def test_configuration():
     print("\n[TESTING] Configuration...")
     
     try:
-        from security_config import AES_KEY_SIZE, PBKDF2_ITERATIONS, AWS_REGIONS
-        
+        from security_config import (
+            AES_KEY_SIZE, ARGON2_TIME_COST, ARGON2_MEMORY_COST, AWS_REGIONS
+        )
+
         assert AES_KEY_SIZE == 32, f"Expected AES_KEY_SIZE=32, got {AES_KEY_SIZE}"
-        assert PBKDF2_ITERATIONS > 10000, f"PBKDF2 iterations too low: {PBKDF2_ITERATIONS}"
+        assert ARGON2_TIME_COST >= 2, (
+            f"Argon2 time cost too low: {ARGON2_TIME_COST}"
+        )
+        assert ARGON2_MEMORY_COST >= 64 * 1024, (
+            f"Argon2 memory cost too low: {ARGON2_MEMORY_COST}"
+        )
         assert len(AWS_REGIONS) > 10, f"Too few AWS regions: {len(AWS_REGIONS)}"
         
         print("[PASS] Configuration constants valid")
