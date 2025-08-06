@@ -13,6 +13,15 @@ on:
         options:
         - testpypi
         - pypi
+      version_increment:
+        description: 'Version increment type (if not using git tag)'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
 
 jobs:
   test:
@@ -50,12 +59,14 @@ jobs:
     name: Build distribution 📦
     runs-on: ubuntu-latest
     needs: test  # Only build if tests pass
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Full history for proper versioning
+        fetch-depth: 0  # Full history for proper versioning and git tags
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -66,6 +77,74 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install build twine
+    
+    - name: Determine version
+      id: version
+      run: |
+        # Check if we have a git tag that looks like a version
+        if git describe --tags --exact-match 2>/dev/null | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+'; then
+          # Use git tag as version (remove 'v' prefix if present)
+          VERSION=$(git describe --tags --exact-match | sed 's/^v//')
+          echo "Using git tag version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        else
+          # Auto-increment version based on input or default to patch
+          INCREMENT_TYPE="${{ github.event.inputs.version_increment || 'patch' }}"
+          CURRENT_VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              config = tomllib.load(f)
+          print(config['project']['version'])
+          ")
+          
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          case $INCREMENT_TYPE in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Auto-incremented version ($INCREMENT_TYPE): $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        fi
+    
+    - name: Update pyproject.toml version
+      run: |
+        # Install tomli_w for writing TOML
+        pip install tomli_w
+        
+        # Update version in pyproject.toml
+        python -c "
+        import tomllib
+        import tomli_w
+        import os
+        
+        version = os.environ['VERSION']
+        
+        with open('pyproject.toml', 'rb') as f:
+            config = tomllib.load(f)
+        
+        config['project']['version'] = version
+        
+        with open('pyproject.toml', 'wb') as f:
+            tomli_w.dump(config, f)
+        
+        print(f'Updated pyproject.toml to version {version}')
+        "
     
     - name: Verify package metadata
       run: |
@@ -108,6 +187,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'testpypi'
     environment: testpypi
     
+    permissions:
+      id-token: write  # Required for Trusted Publishers
+      contents: read
+    
     steps:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
@@ -115,12 +198,25 @@ jobs:
         name: python-package-distributions
         path: dist/
     
-    - name: Publish to TestPyPI
+    - name: Publish to TestPyPI (Trusted Publisher)
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        skip-existing: true
+        print-hash: true
+        verbose: true
+      continue-on-error: true
+      id: publish-trusted
+    
+    - name: Publish to TestPyPI (API Token fallback)
+      if: steps.publish-trusted.outcome == 'failure'
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         repository-url: https://test.pypi.org/legacy/
         password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        skip-existing: true
         print-hash: true
+        verbose: true
 
   publish-to-pypi:
     needs: build
@@ -128,6 +224,10 @@ jobs:
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'pypi')
     environment: pypi
     
+    permissions:
+      id-token: write  # Required for Trusted Publishers
+      contents: read
+    
     steps:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
@@ -135,15 +235,27 @@ jobs:
         name: python-package-distributions
         path: dist/
     
-    - name: Publish to PyPI
+    - name: Publish to PyPI (Trusted Publisher)
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true
+        print-hash: true
+        verbose: true
+      continue-on-error: true
+      id: publish-trusted
+    
+    - name: Publish to PyPI (API Token fallback)
+      if: steps.publish-trusted.outcome == 'failure'
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
+        skip-existing: true
         print-hash: true
+        verbose: true
 
   post-publish:
     name: Test PyPI package on Windows 🪟
-    needs: [publish-to-pypi]
+    needs: [build, publish-to-pypi]
     runs-on: windows-latest
     if: always() && (needs.publish-to-pypi.result == 'success')
     
@@ -158,28 +270,36 @@ jobs:
     
     - name: Verify PyPI publication
       run: |
-        echo "Waiting for package to be available on PyPI..."
+        $VERSION = "${{ needs.build.outputs.version }}"
+        echo "Waiting for package version $VERSION to be available on PyPI..."
         Start-Sleep -Seconds 60
         
         echo "Testing installation from PyPI..."
-        python -m pip install --upgrade winhello-crypto --force-reinstall
+        python -m pip install --upgrade "winhello-crypto==$VERSION" --force-reinstall
         
         echo "Verifying console scripts..."
         winhello-crypto --help
         aws-hello-creds --help
         
-        echo "Package successfully published and verified!"
+        echo "Package version $VERSION successfully published and verified!"
       continue-on-error: true
     
     - name: Create deployment summary
       run: |
+        $VERSION = "${{ needs.build.outputs.version }}"
         echo "## 🚀 PyPI Deployment Summary" >> $env:GITHUB_STEP_SUMMARY
         echo "" >> $env:GITHUB_STEP_SUMMARY
         echo "✅ **Package**: winhello-crypto" >> $env:GITHUB_STEP_SUMMARY
+        echo "✅ **Version**: $VERSION" >> $env:GITHUB_STEP_SUMMARY
         echo "✅ **Environment**: PyPI Production" >> $env:GITHUB_STEP_SUMMARY
-        echo "✅ **URL**: https://pypi.org/project/winhello-crypto/" >> $env:GITHUB_STEP_SUMMARY
-        echo "✅ **Installation**: \`pip install winhello-crypto\`" >> $env:GITHUB_STEP_SUMMARY
+        echo "✅ **URL**: https://pypi.org/project/winhello-crypto/$VERSION/" >> $env:GITHUB_STEP_SUMMARY
+        echo "✅ **Installation**: \`pip install winhello-crypto==$VERSION\`" >> $env:GITHUB_STEP_SUMMARY
         echo "" >> $env:GITHUB_STEP_SUMMARY
         echo "### Available Commands" >> $env:GITHUB_STEP_SUMMARY
         echo "- \`aws-hello-creds\` - AWS credential management" >> $env:GITHUB_STEP_SUMMARY
         echo "- \`winhello-crypto\` - File encryption/decryption" >> $env:GITHUB_STEP_SUMMARY
+        echo "" >> $env:GITHUB_STEP_SUMMARY
+        echo "### Publishing Method" >> $env:GITHUB_STEP_SUMMARY
+        echo "- ✅ **Trusted Publishers**: Secure authentication without API tokens" >> $env:GITHUB_STEP_SUMMARY
+        echo "- ✅ **Skip Existing**: Robust handling of duplicate uploads" >> $env:GITHUB_STEP_SUMMARY
+        echo "- ✅ **Auto-versioning**: Automatic version management" >> $env:GITHUB_STEP_SUMMARY
