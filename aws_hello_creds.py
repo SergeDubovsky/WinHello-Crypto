@@ -302,6 +302,21 @@ class AWSCredentialManager:
                     })
                     raise WindowsHelloError(f"Invalid credential data format: {e}")
                 
+                # Handle both credential formats:
+                # 1. Direct credential format: {"aws_access_key_id": "...", "aws_secret_access_key": "..."}
+                # 2. Profile format: {"profile_name": "...", "config": {"aws_access_key_id": "..."}, ...}
+                if "config" in credential_data and "profile_name" in credential_data:
+                    # Profile format - extract credentials from config
+                    profile_config = credential_data["config"]
+                    credentials = {}
+                    if "aws_access_key_id" in profile_config:
+                        credentials["aws_access_key_id"] = profile_config["aws_access_key_id"]
+                    if "aws_secret_access_key" in profile_config:
+                        credentials["aws_secret_access_key"] = profile_config["aws_secret_access_key"]
+                    if "aws_session_token" in profile_config:
+                        credentials["aws_session_token"] = profile_config["aws_session_token"]
+                    credential_data = credentials
+                
                 # Validate required fields
                 required_fields = ["aws_access_key_id", "aws_secret_access_key"]
                 missing_fields = [field for field in required_fields if field not in credential_data]
@@ -1159,24 +1174,7 @@ async def output_credentials_json(profile_name: str) -> None:
     manager = AWSCredentialManager()
     
     try:
-        # Check if this is an encrypted profile request
-        if profile_name.endswith('-encrypted'):
-            # Extract the original profile name
-            original_profile = profile_name[:-10]  # Remove '-encrypted' suffix
-            
-            # Look for the encrypted file in the ~/.aws/hello-encrypted directory
-            aws_dir = Path.home() / ".aws"
-            encrypted_dir = aws_dir / "hello-encrypted"
-            encrypted_file = encrypted_dir / f"{original_profile}.enc"
-            
-            if not encrypted_file.exists():
-                raise Exception(f"Encrypted file not found: {encrypted_file}")
-            
-            # Decrypt and get credentials from encrypted file
-            credentials = await manager._get_credentials_from_encrypted_file(str(encrypted_file))
-        else:
-            # Use normal profile lookup
-            credentials = await manager.get_credentials(profile_name)
+        credentials = await manager.get_credentials(profile_name)
         
         # Format for AWS credential_process
         output = {

@@ -79,6 +79,28 @@ $ aws s3 ls --profile my-secure-profile
 - **Rotation Monitoring**: Automatic detection of aging credentials with rotation recommendations
 - **Async Operations**: Non-blocking file operations
 
+## What's New in v2.1.7
+
+### Enhanced Profile Management
+
+- **Simplified Profile Architecture**: Eliminated complex profile name mapping logic for more predictable behavior
+- **Direct File Naming**: Profile names now match encrypted file names exactly (e.g., `my-profile` uses `my-profile.enc`)
+- **Improved export-profile Command**: Fixed profile name resolution issues and streamlined credential export functionality
+- **Dual Format Support**: Enhanced compatibility with both direct credential format and full profile format storage
+- **Better Error Handling**: More descriptive error messages for profile-related operations
+
+### Bug Fixes
+
+- Fixed profile name mapping inconsistencies between `get-credentials` and `export-profile` commands
+- Resolved credential format compatibility issues for profiles created with different storage methods
+- Improved credential validation and error reporting
+
+### Technical Improvements
+
+- Streamlined codebase with reduced complexity in profile name resolution
+- Enhanced test coverage for profile management operations
+- Better separation of concerns between credential storage formats
+
 ## Components
 
 ### 1. File Encryption (`hello_crypto.py`)
@@ -218,8 +240,13 @@ aws-hello-creds remove-profile old-profile
 # Test credential retrieval (outputs JSON for credential_process)
 aws-hello-creds get-credentials --profile my-profile
 
-# Export profile credentials in plain text format
+# Export profile credentials in plain text format (new in v2.1.7)
 aws-hello-creds export-profile my-profile
+
+# Output example:
+# aws_access_key_id=AKIA1234567890EXAMPLE
+# aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+# aws_session_token=IQoJb3JpZ2luX2VjEHoaCXVzLWVhc3QtMSJ...
 
 # Set environment variables for shell session
 aws-hello-creds set-env my-profile
