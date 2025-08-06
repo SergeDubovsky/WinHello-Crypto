@@ -45,18 +45,25 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install cryptography pytest pytest-asyncio
+        pip install cryptography pytest pytest-asyncio pytest-cov
 
-    - name: Run security utils tests
+    - name: Run security utils tests with coverage
       run: |
-        python -m pytest tests/test_security_utils.py -v --tb=short -x || echo "Security utils tests completed"
+        python -m pytest tests/test_security_utils.py -v --tb=short -x --cov=security_utils --cov-report=xml --cov-append || echo "Security utils tests completed"
       continue-on-error: true
       env:
         PYTHONPATH: .
 
-    - name: Run hello_crypto tests
+    - name: Run hello_crypto tests with coverage
       run: |
-        python -m pytest tests/test_hello_crypto.py -v --tb=short || echo "hello_crypto tests completed (Windows Hello required)"
+        python -m pytest tests/test_hello_crypto.py -v --tb=short --cov=hello_crypto --cov-report=xml --cov-append || echo "hello_crypto tests completed (Windows Hello required)"
+      continue-on-error: true
+      env:
+        PYTHONPATH: .
+
+    - name: Run aws_hello_creds tests with coverage
+      run: |
+        python -m pytest tests/test_aws_hello_creds.py -v --tb=short --cov=aws_hello_creds --cov-report=xml --cov-append || echo "aws_hello_creds tests completed"
       continue-on-error: true
       env:
         PYTHONPATH: .
@@ -66,6 +73,16 @@ jobs:
         python ci_test_runner.py
       env:
         PYTHONPATH: .
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Test core functionality imports
       run: |
