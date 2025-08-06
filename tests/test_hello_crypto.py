@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from hello_crypto import FileEncryptor, WindowsHelloError
     from security_config import (
-        AES_KEY_SIZE, AES_BLOCK_SIZE,
+        AES_KEY_SIZE, AES_GCM_NONCE_SIZE, AES_GCM_TAG_SIZE,
         ARGON2_TIME_COST, ARGON2_MEMORY_COST, ARGON2_PARALLELISM,
     )
     from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
@@ -50,7 +50,8 @@ class TestFileEncryptor:
         
         # Encrypt
         encrypted = encryptor.encrypt_data(original_data, test_key)
-        assert len(encrypted) > len(original_data)  # Should be larger due to IV and padding
+        expected_len = len(original_data) + AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE
+        assert len(encrypted) == expected_len  # Nonce and tag added
         assert encrypted != original_data  # Should be different
         
         # Decrypt
@@ -91,21 +92,21 @@ class TestFileEncryptor:
         original_data = b"Test data for integrity check"
         encrypted = encryptor.encrypt_data(original_data, test_key)
 
-        # Corrupt the ciphertext but leave the HMAC untouched
+        # Corrupt the ciphertext but leave the tag untouched
         corrupted = bytearray(encrypted)
-        corrupted[AES_BLOCK_SIZE] ^= 1  # Flip a bit in the ciphertext portion
+        corrupted[AES_GCM_NONCE_SIZE] ^= 1  # Flip a bit in the ciphertext portion
 
         with pytest.raises(ValueError, match="Data integrity check failed"):
             encryptor.decrypt_data(bytes(corrupted), test_key)
     
     def test_encrypt_different_data_produces_different_results(self, encryptor, test_key):
-        """Test that encrypting the same data twice produces different results (due to random IV)."""
+        """Test that encrypting the same data twice produces different results (due to random nonce)."""
         data = b"Test data for randomness check"
         
         encrypted1 = encryptor.encrypt_data(data, test_key)
         encrypted2 = encryptor.encrypt_data(data, test_key)
         
-        # Should be different due to random IV
+        # Should be different due to random nonce
         assert encrypted1 != encrypted2
         
         # But both should decrypt to the same original data

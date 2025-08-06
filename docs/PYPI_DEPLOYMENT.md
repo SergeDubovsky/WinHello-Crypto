@@ -36,6 +36,9 @@ aws-hello-creds set-env work
 
 # Get credentials for AWS CLI
 aws-hello-creds get-credentials --profile work
+
+# Export profile credentials in plain text
+aws-hello-creds export-profile work
 ```
 
 #### File Encryption
