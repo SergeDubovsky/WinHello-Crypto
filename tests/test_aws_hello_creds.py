@@ -421,3 +421,617 @@ output = json
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestCredentialBackupAndRestore:
+    """Test backup and restore functionality."""
+    
+    @pytest.fixture
+    def manager_with_backup(self):
+        """Create manager with backup directory setup."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mgr = AWSCredentialManager()
+            mgr.aws_dir = Path(temp_dir) / ".aws"
+            mgr.credentials_dir = mgr.aws_dir / "hello-encrypted"
+            mgr.backup_dir = mgr.credentials_dir / "backups"
+            yield mgr
+    
+    @pytest.mark.asyncio
+    async def test_backup_credentials(self, manager_with_backup):
+        """Test credential backup functionality."""
+        manager = manager_with_backup
+        manager._ensure_directories()
+        manager.backup_dir.mkdir(exist_ok=True)
+        
+        test_credentials = {
+            "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "region": "us-east-1"
+        }
+        
+        with patch.object(manager.encryptor, 'encrypt_data', return_value=b'encrypted_backup'):
+            await manager._backup_credentials("test-profile", test_credentials)
+            
+            # Check backup file was created
+            backup_files = list(manager.backup_dir.glob("test-profile_*.enc"))
+            assert len(backup_files) > 0
+    
+    @pytest.mark.asyncio
+    async def test_list_backups_empty(self, manager_with_backup):
+        """Test listing backups when none exist."""
+        manager = manager_with_backup
+        manager._ensure_directories()
+        manager.backup_dir.mkdir(exist_ok=True)
+        
+        # Should not raise exception
+        await manager.list_backups()
+    
+    @pytest.mark.asyncio
+    async def test_list_backups_with_files(self, manager_with_backup):
+        """Test listing backups when backup files exist."""
+        manager = manager_with_backup
+        manager._ensure_directories()
+        manager.backup_dir.mkdir(exist_ok=True)
+        
+        # Create dummy backup files
+        (manager.backup_dir / "profile1_20240101_120000.enc").touch()
+        (manager.backup_dir / "profile2_20240102_130000.enc").touch()
+        
+        # Should list the backups
+        await manager.list_backups()
+    
+    @pytest.mark.asyncio
+    async def test_restore_from_backup_success(self, manager_with_backup):
+        """Test successful backup restoration."""
+        manager = manager_with_backup
+        manager._ensure_directories()
+        manager.backup_dir.mkdir(exist_ok=True)
+        
+        # Create backup file
+        backup_file = manager.backup_dir / "test-profile_20240101_120000.enc"
+        backup_file.write_bytes(b'encrypted_backup_data')
+        
+        test_credentials = {
+            "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "region": "us-east-1"
+        }
+        
+        json_data = json.dumps(test_credentials).encode('utf-8')
+        
+        with patch.object(manager.encryptor, 'decrypt_data', return_value=json_data), \
+             patch.object(manager.encryptor, 'encrypt_data', return_value=b'encrypted_data'), \
+             patch.object(manager, '_update_aws_config', return_value=None):
+            
+            await manager.restore_from_backup("test-profile", "20240101_120000")
+            
+            # Check credential file was created
+            cred_file = manager._get_credential_file_path("test-profile")
+            assert cred_file.exists()
+    
+    @pytest.mark.asyncio
+    async def test_restore_from_backup_not_found(self, manager_with_backup):
+        """Test backup restoration when backup doesn't exist."""
+        manager = manager_with_backup
+        manager._ensure_directories()
+        
+        with pytest.raises(Exception):  # Should raise appropriate error
+            await manager.restore_from_backup("nonexistent", "20240101_120000")
+
+
+class TestCredentialRotation:
+    """Test credential rotation functionality."""
+    
+    @pytest.fixture
+    def manager_with_rotation(self):
+        """Create manager for rotation tests."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mgr = AWSCredentialManager()
+            mgr.aws_dir = Path(temp_dir) / ".aws"
+            mgr.credentials_dir = mgr.aws_dir / "hello-encrypted"
+            yield mgr
+    
+    @pytest.mark.asyncio
+    async def test_check_credential_age_new(self, manager_with_rotation):
+        """Test credential age check for new credentials."""
+        manager = manager_with_rotation
+        manager._ensure_directories()
+        
+        # Create fresh credential file
+        cred_file = manager._get_credential_file_path("test-profile")
+        cred_file.touch()
+        
+        # Mock get_credentials to avoid Windows Hello authentication
+        with patch.object(manager, 'get_credentials', side_effect=Exception("Profile not found")):
+            needs_rotation, age_days, warning = await manager._check_credential_age("test-profile")
+            assert not needs_rotation  # Should be False when profile not found
+            assert age_days is None
+            # The warning might be None depending on the specific error handling
+    
+    @pytest.mark.asyncio
+    async def test_check_credential_age_missing_file(self, manager_with_rotation):
+        """Test credential age check when file doesn't exist."""
+        manager = manager_with_rotation
+        
+        needs_rotation, age_days, warning = await manager._check_credential_age("nonexistent")
+        assert needs_rotation is False
+        assert age_days is None
+        # The warning might be None depending on the specific error handling
+    
+    @pytest.mark.asyncio
+    async def test_check_rotation_needed(self, manager_with_rotation):
+        """Test rotation needed check."""
+        manager = manager_with_rotation
+        manager._ensure_directories()
+        
+        # Create credential file
+        cred_file = manager._get_credential_file_path("test-profile")
+        cred_file.touch()
+        
+        # Should not raise exception
+        await manager.check_rotation_needed("test-profile")
+    
+    @pytest.mark.asyncio
+    async def test_rotate_credentials_manual(self, manager_with_rotation):
+        """Test manual credential rotation."""
+        manager = manager_with_rotation
+        
+        # Mock get_credentials to return existing credentials
+        mock_creds = {
+            "aws_access_key_id": "OLD_KEY",
+            "aws_secret_access_key": "OLD_SECRET", 
+            "region": "us-west-1"
+        }
+        
+        # Mock the rotation process and user input
+        with patch.object(manager, 'get_credentials', return_value=mock_creds), \
+             patch.object(manager, '_backup_credentials', return_value=None), \
+             patch.object(manager, 'add_profile', return_value=None), \
+             patch('builtins.input', return_value='y'):  # Mock user input
+            
+            # Test with required credentials for manual rotation
+            await manager.rotate_credentials(
+                "test-profile", "manual", 
+                "AKIAIOSFODNN7EXAMPLE", 
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+            )
+
+
+class TestFileEncryptionDecryption:
+    """Test AWS profile file encryption and decryption."""
+    
+    @pytest.fixture
+    def manager_with_files(self):
+        """Create manager with file setup."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mgr = AWSCredentialManager()
+            mgr.aws_dir = Path(temp_dir) / ".aws"
+            mgr.credentials_dir = mgr.aws_dir / "hello-encrypted"
+            yield mgr
+    
+    @pytest.mark.asyncio
+    async def test_encrypt_aws_profile_success(self, manager_with_files):
+        """Test encrypting AWS profile from credentials file."""
+        manager = manager_with_files
+        manager._ensure_directories()
+        
+        # Mock the config parser to return our test profile
+        mock_config = MagicMock()
+        mock_config.has_section.return_value = True
+        mock_config.items.return_value = [('region', 'us-east-1'), ('output', 'json')]
+        
+        # Mock the encryption and file operations to avoid path validation issues
+        with patch('configparser.RawConfigParser') as mock_config_class, \
+             patch.object(manager.encryptor, 'encrypt_data', return_value=b'encrypted_data'), \
+             patch('pathlib.Path.write_bytes') as mock_write, \
+             patch('shutil.move') as mock_move:
+            
+            mock_config_class.return_value = mock_config
+            
+            await manager.encrypt_aws_profile("test-profile")
+            
+            # Check that write_bytes was called (file was written)
+            mock_write.assert_called()
+    
+    @pytest.mark.asyncio
+    async def test_encrypt_aws_profile_with_delete(self, manager_with_files):
+        """Test encrypting AWS profile with deletion of plaintext."""
+        manager = manager_with_files
+        manager._ensure_directories()
+        
+        # Mock the config parser to return our test profile
+        mock_config = MagicMock()
+        mock_config.has_section.return_value = True
+        mock_config.items.return_value = [('region', 'us-east-1'), ('output', 'json')]
+        mock_config.remove_section.return_value = True
+        
+        # Mock the encryption and file operations to avoid path validation issues  
+        with patch('configparser.RawConfigParser') as mock_config_class, \
+             patch.object(manager.encryptor, 'encrypt_data', return_value=b'encrypted_data'), \
+             patch('pathlib.Path.write_bytes') as mock_write, \
+             patch('shutil.move') as mock_move, \
+             patch('pathlib.Path.open', MagicMock()):
+            
+            mock_config_class.return_value = mock_config
+            
+            await manager.encrypt_aws_profile("test-profile", delete_plain=True)
+            
+            # Check that write operations were called
+            mock_write.assert_called()
+            mock_config.remove_section.assert_called_with('profile test-profile')
+    
+    @pytest.mark.asyncio
+    async def test_decrypt_aws_profile_success(self, manager_with_files):
+        """Test decrypting AWS profile to credentials file."""
+        manager = manager_with_files
+        manager._ensure_directories()
+        
+        # Create encrypted file
+        enc_file = manager._get_credential_file_path("test-profile")
+        enc_file.write_bytes(b'encrypted_data')
+        
+        test_credentials = {
+            "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "region": "us-east-1"
+        }
+        
+        json_data = json.dumps(test_credentials).encode('utf-8')
+        
+        # Mock file validation and decryption
+        with patch('security_utils.validate_file_path', return_value=enc_file), \
+             patch.object(manager.encryptor, 'decrypt_file', return_value=None), \
+             patch('pathlib.Path.read_text', return_value=json.dumps(test_credentials)):
+            
+            await manager.decrypt_aws_profile(str(enc_file))
+            
+            # The test is mainly about exercising the method, as file system operations are complex to mock
+
+
+class TestShellDetection:
+    """Test shell detection functionality."""
+    
+    @pytest.fixture
+    def manager_shell(self):
+        """Create manager for shell tests."""
+        return AWSCredentialManager()
+    
+    def test_detect_shell_powershell(self, manager_shell):
+        """Test PowerShell detection."""
+        with patch.dict(os.environ, {'PSModulePath': 'C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules'}):
+            shell = manager_shell._detect_shell()
+            assert shell == "powershell"
+    
+    def test_detect_shell_cmd(self, manager_shell):
+        """Test Command Prompt detection."""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('os.environ.get') as mock_get:
+                mock_get.side_effect = lambda key, default=None: {
+                    'PSModulePath': None,
+                    'COMSPEC': 'C:\\Windows\\system32\\cmd.exe'
+                }.get(key, default)
+                
+                shell = manager_shell._detect_shell()
+                assert shell == "cmd"
+    
+    def test_detect_shell_default(self, manager_shell):
+        """Test default shell detection."""
+        with patch.dict(os.environ, {}, clear=True):
+            shell = manager_shell._detect_shell()
+            assert shell in ["powershell", "cmd"]  # Should default to something
+
+
+class TestErrorHandling:
+    """Test error handling scenarios."""
+    
+    @pytest.fixture
+    def manager_error(self):
+        """Create manager for error tests."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mgr = AWSCredentialManager()
+            mgr.aws_dir = Path(temp_dir) / ".aws"
+            mgr.credentials_dir = mgr.aws_dir / "hello-encrypted"
+            yield mgr
+    
+    @pytest.mark.asyncio
+    async def test_get_credentials_from_encrypted_file_invalid_json(self, manager_error):
+        """Test handling invalid JSON in encrypted file."""
+        manager = manager_error
+        manager._ensure_directories()
+        
+        # Create encrypted file
+        enc_file = manager._get_credential_file_path("test-profile")
+        enc_file.write_bytes(b'encrypted_data')
+        
+        with patch.object(manager.encryptor, 'decrypt_data', return_value=b'invalid json'):
+            with pytest.raises(Exception):  # Should raise JSON decode error
+                await manager._get_credentials_from_encrypted_file(str(enc_file))
+    
+    @pytest.mark.asyncio
+    async def test_add_profile_windows_hello_not_supported(self, manager_error):
+        """Test adding profile when Windows Hello is not supported."""
+        manager = manager_error
+        
+        with patch.object(manager.encryptor, 'is_supported', return_value=False):
+            with pytest.raises(Exception):  # Should raise appropriate error
+                await manager.add_profile(
+                    "test-profile",
+                    "AKIAIOSFODNN7EXAMPLE", 
+                    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                )
+    
+    @pytest.mark.asyncio
+    async def test_output_env_vars_invalid_profile(self, manager_error):
+        """Test environment variable output with invalid profile."""
+        manager = manager_error
+        
+        with patch.object(manager, 'get_credentials', side_effect=Exception("Profile not found")):
+            with pytest.raises(SystemExit):
+                await manager.output_env_vars("nonexistent-profile")
+
+
+class TestCLIMain:
+    """Test CLI main function and argument parsing."""
+    
+    @pytest.mark.asyncio
+    async def test_main_no_args(self):
+        """Test main function with no arguments."""
+        with patch('sys.argv', ['aws-hello-creds.py']):
+            with patch('builtins.print') as mock_print:
+                await aws_hello_creds.main()
+                # Should print help when no command provided
+    
+    @pytest.mark.asyncio
+    async def test_main_add_profile(self):
+        """Test main function with add-profile command."""
+        test_args = [
+            'aws-hello-creds.py', 'add-profile', 'test-profile',
+            '--access-key', 'AKIAIOSFODNN7EXAMPLE',
+            '--secret-key', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+            '--region', 'us-east-1'
+        ]
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.add_profile = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.add_profile.assert_called_once_with(
+                    'test-profile',
+                    'AKIAIOSFODNN7EXAMPLE',
+                    'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+                    None,  # session_token
+                    'us-east-1'
+                )
+    
+    @pytest.mark.asyncio
+    async def test_main_get_credentials(self):
+        """Test main function with get-credentials command."""
+        test_args = ['aws-hello-creds.py', 'get-credentials', '--profile', 'test-profile']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.output_credentials_json') as mock_output:
+                mock_output.return_value = None
+                
+                await aws_hello_creds.main()
+                
+                mock_output.assert_called_once_with('test-profile')
+    
+    @pytest.mark.asyncio
+    async def test_main_export_profile(self):
+        """Test main function with export-profile command."""
+        test_args = ['aws-hello-creds.py', 'export-profile', 'test-profile']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.output_credentials_plaintext') as mock_output:
+                mock_output.return_value = None
+                
+                await aws_hello_creds.main()
+                
+                mock_output.assert_called_once_with('test-profile')
+    
+    @pytest.mark.asyncio
+    async def test_main_set_env(self):
+        """Test main function with set-env command."""
+        test_args = ['aws-hello-creds.py', 'set-env', 'test-profile', '--shell', 'powershell']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.output_env_vars = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.output_env_vars.assert_called_once_with('test-profile', 'powershell')
+    
+    @pytest.mark.asyncio
+    async def test_main_list_profiles(self):
+        """Test main function with list-profiles command."""
+        test_args = ['aws-hello-creds.py', 'list-profiles']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.list_profiles = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.list_profiles.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_main_remove_profile(self):
+        """Test main function with remove-profile command."""
+        test_args = ['aws-hello-creds.py', 'remove-profile', 'test-profile']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.remove_profile = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.remove_profile.assert_called_once_with('test-profile')
+    
+    @pytest.mark.asyncio
+    async def test_main_check_rotation(self):
+        """Test main function with check-rotation command."""
+        test_args = ['aws-hello-creds.py', 'check-rotation', 'test-profile']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.check_rotation_needed = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.check_rotation_needed.assert_called_once_with('test-profile')
+    
+    @pytest.mark.asyncio
+    async def test_main_rotate_credentials(self):
+        """Test main function with rotate-credentials command."""
+        test_args = [
+            'aws-hello-creds.py', 'rotate-credentials', 'test-profile',
+            '--type', 'manual',
+            '--access-key', 'AKIAIOSFODNN7EXAMPLE',
+            '--secret-key', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+        ]
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.rotate_credentials = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.rotate_credentials.assert_called_once_with(
+                    'test-profile',
+                    'manual',
+                    'AKIAIOSFODNN7EXAMPLE',
+                    'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+                    None  # session_token
+                )
+    
+    @pytest.mark.asyncio
+    async def test_main_list_backups(self):
+        """Test main function with list-backups command."""
+        test_args = ['aws-hello-creds.py', 'list-backups', '--profile', 'test-profile']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.list_backups = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.list_backups.assert_called_once_with('test-profile')
+    
+    @pytest.mark.asyncio
+    async def test_main_restore_backup(self):
+        """Test main function with restore-backup command."""
+        test_args = ['aws-hello-creds.py', 'restore-backup', 'test-profile', '20240101_120000']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.restore_from_backup = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.restore_from_backup.assert_called_once_with('test-profile', '20240101_120000')
+    
+    @pytest.mark.asyncio
+    async def test_main_encrypt_profile(self):
+        """Test main function with encrypt-profile command."""
+        test_args = ['aws-hello-creds.py', 'encrypt-profile', 'test-profile', '--delete-plain']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.encrypt_aws_profile = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.encrypt_aws_profile.assert_called_once_with('test-profile', None, True)
+    
+    @pytest.mark.asyncio
+    async def test_main_decrypt_profile(self):
+        """Test main function with decrypt-profile command."""
+        test_args = ['aws-hello-creds.py', 'decrypt-profile', '/path/to/file.enc', '--profile', 'new-name']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.decrypt_aws_profile = AsyncMock()
+                mock_manager_class.return_value = mock_manager
+                
+                await aws_hello_creds.main()
+                
+                mock_manager.decrypt_aws_profile.assert_called_once_with('/path/to/file.enc', 'new-name')
+    
+    @pytest.mark.asyncio
+    async def test_main_windows_hello_error(self):
+        """Test main function handling WindowsHelloError."""
+        test_args = ['aws-hello-creds.py', 'list-profiles']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.list_profiles = AsyncMock(side_effect=aws_hello_creds.WindowsHelloError("Test error"))
+                mock_manager_class.return_value = mock_manager
+                
+                with patch('sys.stderr') as mock_stderr:
+                    with pytest.raises(SystemExit) as exc_info:
+                        await aws_hello_creds.main()
+                    
+                    assert exc_info.value.code == 1
+    
+    @pytest.mark.asyncio
+    async def test_main_file_not_found_error(self):
+        """Test main function handling FileNotFoundError."""
+        test_args = ['aws-hello-creds.py', 'list-profiles']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.list_profiles = AsyncMock(side_effect=FileNotFoundError("File not found"))
+                mock_manager_class.return_value = mock_manager
+                
+                with patch('sys.stderr') as mock_stderr:
+                    with pytest.raises(SystemExit) as exc_info:
+                        await aws_hello_creds.main()
+                    
+                    assert exc_info.value.code == 1
+    
+    @pytest.mark.asyncio
+    async def test_main_unexpected_error(self):
+        """Test main function handling unexpected errors."""
+        test_args = ['aws-hello-creds.py', 'list-profiles']
+        
+        with patch('sys.argv', test_args):
+            with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
+                mock_manager = MagicMock()
+                mock_manager.list_profiles = AsyncMock(side_effect=RuntimeError("Unexpected error"))
+                mock_manager_class.return_value = mock_manager
+                
+                with patch('sys.stderr') as mock_stderr:
+                    with pytest.raises(SystemExit) as exc_info:
+                        await aws_hello_creds.main()
+                    
+                    assert exc_info.value.code == 1
+    
+    def test_cli_main(self):
+        """Test CLI entry point."""
+        with patch('aws_hello_creds.asyncio.run') as mock_run:
+            aws_hello_creds.cli_main()
+            mock_run.assert_called_once()
