@@ -1,5 +1,12 @@
 # WinHello-Crypto
 
+[![CI](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/ci.yml)
+[![Security Tests](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/security-tests.yml/badge.svg)](https://github.com/SergeDubovsky/WinHello-Crypto/actions/workflows/security-tests.yml)
+[![codecov](https://codecov.io/gh/SergeDubovsky/WinHello-Crypto/branch/main/graph/badge.svg)](https://codecov.io/gh/SergeDubovsky/WinHello-Crypto)
+[![PyPI version](https://badge.fury.io/py/winhello-crypto.svg)](https://badge.fury.io/py/winhello-crypto)
+[![Python Support](https://img.shields.io/pypi/pyversions/winhello-crypto.svg)](https://pypi.org/project/winhello-crypto/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 Secure AWS credential storage and file encryption using Windows Hello biometric authentication.
 
 ## Quick Start
