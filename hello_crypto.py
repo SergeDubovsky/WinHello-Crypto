@@ -35,6 +35,16 @@ except ImportError:
     DataWriter = MagicMock()
     DataReader = MagicMock()
 
+# Windows API imports for window management
+try:
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    WINDOWS_API_AVAILABLE = True
+except ImportError:
+    WINDOWS_API_AVAILABLE = False
+
 # Import security utilities
 from security_utils import (
     SecurityError, ValidationError, RateLimitError, rate_limiter,
@@ -64,6 +74,146 @@ if os.getenv('WINHELLO_DEBUG') != '1':
 class WindowsHelloError(Exception):
     """Custom exception for Windows Hello operations."""
     pass
+
+
+def _bring_window_to_foreground():
+    """Bring the current console window to the foreground before Windows Hello prompt."""
+    if not WINDOWS_API_AVAILABLE or os.name != 'nt':
+        return
+    
+    try:
+        # Get the console window handle
+        console_window = kernel32.GetConsoleWindow()
+        if console_window:
+            # Get the current foreground window
+            current_foreground = user32.GetForegroundWindow()
+            
+            # Force the console window to the foreground with multiple approaches
+            user32.ShowWindow(console_window, 9)  # SW_RESTORE - restore if minimized
+            user32.SetWindowPos(console_window, -1, 0, 0, 0, 0, 0x0003)  # HWND_TOPMOST, SWP_NOMOVE | SWP_NOSIZE
+            user32.SetWindowPos(console_window, -2, 0, 0, 0, 0, 0x0003)  # HWND_NOTOPMOST, SWP_NOMOVE | SWP_NOSIZE
+            
+            # Use a more aggressive approach to set foreground
+            if current_foreground != console_window:
+                # Attach to the current foreground window's thread
+                current_thread = kernel32.GetCurrentThreadId()
+                if current_foreground:
+                    foreground_thread = user32.GetWindowThreadProcessId(current_foreground, None)
+                    if foreground_thread != current_thread:
+                        user32.AttachThreadInput(foreground_thread, current_thread, True)
+                        user32.SetForegroundWindow(console_window)
+                        user32.SetFocus(console_window)
+                        user32.AttachThreadInput(foreground_thread, current_thread, False)
+                    else:
+                        user32.SetForegroundWindow(console_window)
+                        user32.SetFocus(console_window)
+                else:
+                    user32.SetForegroundWindow(console_window)
+                    user32.SetFocus(console_window)
+            
+            user32.BringWindowToTop(console_window)
+            
+            # Small delay to ensure window operations complete
+            time.sleep(0.2)
+            logger.info("Brought console window to foreground with focus for Windows Hello prompt")
+    except Exception as e:
+        # Don't fail the authentication if window management fails
+        logger.warning(f"Failed to bring window to foreground: {e}")
+
+
+def _find_and_focus_hello_dialog():
+    """Find and focus the Windows Hello authentication dialog."""
+    if not WINDOWS_API_AVAILABLE or os.name != 'nt':
+        return False
+        
+    try:
+        # Target the specific Windows Hello dialog
+        hello_found = False
+        
+        def enum_windows_proc(hwnd, lparam):
+            """Callback function for EnumWindows."""
+            nonlocal hello_found
+            try:
+                # Get window title and class name
+                title_length = user32.GetWindowTextLengthW(hwnd)
+                title = ""
+                if title_length > 0:
+                    title_buffer = ctypes.create_unicode_buffer(title_length + 1)
+                    user32.GetWindowTextW(hwnd, title_buffer, title_length + 1)
+                    title = title_buffer.value
+                    
+                # Get class name
+                class_buffer = ctypes.create_unicode_buffer(256)
+                user32.GetClassNameW(hwnd, class_buffer, 256)
+                class_name = class_buffer.value
+                
+                # Look specifically for Windows Hello/Security dialogs
+                if (("Windows Security" in title or "Windows Hello" in title) and 
+                    ("Credential Dialog" in class_name or "SystemSettings" in class_name)):
+                    
+                    # Check if window is visible
+                    if user32.IsWindowVisible(hwnd):
+                        if not hello_found:  # Only log the first time we find it
+                            logger.info(f"Focusing Windows Hello dialog: '{title}'")
+                        
+                        # More aggressive window activation
+                        # Step 1: Restore and show the window
+                        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                        user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE then SW_RESTORE to force activation
+                        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                        
+                        # Step 2: Set as topmost temporarily
+                        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0003)  # HWND_TOPMOST
+                        
+                        # Step 3: Bring to foreground
+                        user32.SetForegroundWindow(hwnd)
+                        user32.BringWindowToTop(hwnd)
+                        
+                        # Step 4: Set focus and activate
+                        user32.SetActiveWindow(hwnd)
+                        user32.SetFocus(hwnd)
+                        
+                        # Step 5: Remove topmost status
+                        user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0003)  # HWND_NOTOPMOST
+                        
+                        # Step 6: Try to send an activation message
+                        user32.SendMessageW(hwnd, 0x0006, 1, 0)  # WM_ACTIVATE with WA_ACTIVE
+                        
+                        # Step 7: Flash the window to draw attention
+                        user32.FlashWindow(hwnd, True)
+                        
+                        # Step 8: Try to simulate a click to activate biometric sensor
+                        # Get the window rectangle
+                        rect = ctypes.wintypes.RECT()
+                        if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                            # Calculate center of the window
+                            center_x = (rect.left + rect.right) // 2
+                            center_y = (rect.top + rect.bottom) // 2
+                            
+                            # Simulate a mouse click at the center of the dialog
+                            user32.SetCursorPos(center_x, center_y)
+                            user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+                            user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+                        
+                        hello_found = True
+                        return False  # Stop enumeration
+                        
+            except Exception as e:
+                # Continue enumeration even if we fail on one window
+                pass
+            return True  # Continue enumeration
+        
+        # Define the callback type
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        callback = EnumWindowsProc(enum_windows_proc)
+        
+        # Enumerate all windows
+        user32.EnumWindows(callback, 0)
+        return hello_found
+        
+    except Exception as e:
+        logger.warning(f"Failed to find Windows Hello dialog: {e}")
+        return False
 
 
 class FileEncryptor:
@@ -140,7 +290,37 @@ class FileEncryptor:
 
             # Sign with biometric authentication
             logger.info("Requesting Windows Hello authentication...")
-            sign_result = await open_result.credential.request_sign_async(challenge_buffer)
+            
+            # Bring console window to foreground to ensure Windows Hello prompt is visible
+            _bring_window_to_foreground()
+            
+            # Inform user about the authentication request
+            print("[Windows Hello] Authentication required - please complete biometric verification...", file=sys.stderr)
+            print("[Tip] If the dialog appears but doesn't respond, it should now be automatically activated.", file=sys.stderr)
+            
+            # Create a task to find and focus the Windows Hello dialog
+            async def focus_hello_dialog():
+                # Try to find the dialog multiple times
+                for i in range(15):  # Try for up to 3 seconds
+                    await asyncio.sleep(0.2)
+                    if _find_and_focus_hello_dialog():
+                        # Found and focused the dialog, give it a moment to fully activate
+                        await asyncio.sleep(0.3)
+                        break
+            
+            # Start the focus task
+            focus_task = asyncio.create_task(focus_hello_dialog())
+            
+            try:
+                # Start the authentication request
+                sign_result = await open_result.credential.request_sign_async(challenge_buffer)
+            finally:
+                # Cancel the focus task
+                focus_task.cancel()
+                try:
+                    await focus_task
+                except asyncio.CancelledError:
+                    pass
             
             if sign_result.status != KeyCredentialStatus.SUCCESS:
                 rate_limiter.record_attempt(auth_identifier, success=False)
