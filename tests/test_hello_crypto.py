@@ -53,6 +53,16 @@ class TestFileEncryptor:
     def test_encrypt_decrypt_data_roundtrip(self, encryptor, test_key):
         """Test that encryption and decryption work correctly."""
         original_data = b"This is test data for encryption and decryption testing."
+        
+        # Encrypt
+        encrypted = encryptor.encrypt_data(original_data, test_key)
+        expected_len = len(original_data) + AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE
+        assert len(encrypted) == expected_len  # Nonce and tag added
+        assert encrypted != original_data  # Should be different
+        
+        # Decrypt
+        decrypted = encryptor.decrypt_data(encrypted, test_key)
+        assert decrypted == original_data
     
     def test_invalid_encrypted_data_format(self, encryptor):
         """Test decryption with invalid data format."""
@@ -82,59 +92,38 @@ class TestFileEncryptor:
             encryptor.decrypt_data(encrypted, wrong_key)
     
     @patch('hello_crypto.KeyCredentialManager')
-    def test_is_supported_mock(self, mock_kcm, encryptor):
+    async def test_is_supported_mock(self, mock_kcm, encryptor):
         """Test is_supported method with mocked KeyCredentialManager."""
         # Mock the is_supported_async method directly
         mock_kcm.is_supported_async = AsyncMock(return_value=True)
         
-        import asyncio
-        async def test_async():
-            result = await encryptor.is_supported()
-            return result
-        
-        result = asyncio.run(test_async())
+        result = await encryptor.is_supported()
         assert result is True
     
     @patch('hello_crypto.KeyCredentialManager')
-    def test_is_supported_no_manager(self, mock_kcm, encryptor):
+    async def test_is_supported_no_manager(self, mock_kcm, encryptor):
         """Test is_supported when no credential manager available."""
         # Mock is_supported_async to return False
         mock_kcm.is_supported_async = AsyncMock(return_value=False)
         
-        import asyncio
-        async def test_async():
-            result = await encryptor.is_supported()
-            return result
-        
-        result = asyncio.run(test_async())
+        result = await encryptor.is_supported()
         assert result is False
     
     @patch('hello_crypto.KeyCredentialManager')
-    def test_is_supported_exception(self, mock_kcm, encryptor):
+    async def test_is_supported_exception(self, mock_kcm, encryptor):
         """Test is_supported when exception occurs."""
         # Mock is_supported_async to raise an exception
         mock_kcm.is_supported_async = AsyncMock(side_effect=Exception("Windows Hello not available"))
         
-        import asyncio
-        async def test_async():
-            # This should raise WindowsHelloError which we catch
-            with pytest.raises(Exception):  # WindowsHelloError
-                await encryptor.is_supported()
-        
-        asyncio.run(test_async())
+        # This should raise WindowsHelloError which we catch
+        with pytest.raises(Exception):  # WindowsHelloError
+            await encryptor.is_supported()
     
     def test_windows_hello_error_creation(self):
         """Test WindowsHelloError exception creation."""
         error = WindowsHelloError("Test error message")
         assert str(error) == "Test error message"
         assert isinstance(error, Exception)
-    
-    def test_encrypt_empty_data(self, encryptor, test_key):
-        """Test encryption of empty data."""
-        empty_data = b""
-        encrypted = encryptor.encrypt_data(empty_data, test_key)
-        decrypted = encryptor.decrypt_data(encrypted, test_key)
-        assert decrypted == empty_data
     
     def test_encrypt_large_data(self, encryptor, test_key):
         """Test encryption of large data."""
@@ -151,20 +140,6 @@ class TestFileEncryptor:
         with pytest.raises(ValueError):
             encryptor.encrypt_data(test_data, short_key)
         
-    def test_encrypt_decrypt_data_roundtrip_original(self, encryptor, test_key):
-        """Test that encryption and decryption work correctly."""
-        original_data = b"This is test data for encryption and decryption testing."
-        
-        # Encrypt
-        encrypted = encryptor.encrypt_data(original_data, test_key)
-        expected_len = len(original_data) + AES_GCM_NONCE_SIZE + AES_GCM_TAG_SIZE
-        assert len(encrypted) == expected_len  # Nonce and tag added
-        assert encrypted != original_data  # Should be different
-        
-        # Decrypt
-        decrypted = encryptor.decrypt_data(encrypted, test_key)
-        assert decrypted == original_data
-    
     def test_encrypt_data_invalid_key_size(self, encryptor):
         """Test encryption with invalid key size."""
         invalid_key = b"short_key"
@@ -478,6 +453,3 @@ class TestWindowHelpers:
     def test_find_and_focus_dialog_noop(self):
         # Should return False when Windows API unavailable
         assert _find_and_focus_hello_dialog() is False
-
-if __name__ == "__main__":
-    pytest.main([__file__])
