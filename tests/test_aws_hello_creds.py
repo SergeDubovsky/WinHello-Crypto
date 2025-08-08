@@ -462,7 +462,7 @@ output = json
         with patch('shutil.which', return_value='C:/bin/aws-hello-creds'):
             await manager._update_aws_config('bin-profile', 'us-west-1')
         cfg = (manager.aws_dir / 'config').read_text(encoding='utf-8')
-        assert 'credential_process = aws-hello-creds get-credentials --profile bin-profile' in cfg
+        assert 'credential_process = aws-hello-creds get bin-profile --format credential-process' in cfg
         assert 'region = us-west-1' in cfg
 
 if __name__ == "__main__":
@@ -867,7 +867,7 @@ class TestCLIMain:
     async def test_main_add_profile(self):
         """Test main function with add-profile command."""
         test_args = [
-            'aws-hello-creds.py', 'add-profile', 'test-profile',
+            'aws-hello-creds.py', 'set', 'test-profile',
             '--access-key', 'AKIAIOSFODNN7EXAMPLE',
             '--secret-key', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
             '--region', 'us-east-1'
@@ -892,20 +892,20 @@ class TestCLIMain:
     @pytest.mark.asyncio
     async def test_main_get_credentials(self):
         """Test main function with get-credentials command."""
-        test_args = ['aws-hello-creds.py', 'get-credentials', '--profile', 'test-profile']
-        
+        test_args = ['aws-hello-creds.py', 'get', 'test-profile', '--format', 'credential-process']
+
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.output_credentials_json') as mock_output:
                 mock_output.return_value = None
-                
+
                 await aws_hello_creds.main()
-                
+
                 mock_output.assert_called_once_with('test-profile')
     
     @pytest.mark.asyncio
     async def test_main_export_profile(self):
-        """Test main function with export-profile command."""
-        test_args = ['aws-hello-creds.py', 'export-profile', 'test-profile']
+        """Test main function with get --format ini command."""
+        test_args = ['aws-hello-creds.py', 'get', 'test-profile', '--format', 'ini']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.output_credentials_plaintext') as mock_output:
@@ -917,8 +917,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_set_env(self):
-        """Test main function with set-env command."""
-        test_args = ['aws-hello-creds.py', 'set-env', 'test-profile', '--shell', 'powershell']
+        """Test main function with export command."""
+        test_args = ['aws-hello-creds.py', 'export', 'test-profile', '--shell', 'powershell']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -932,8 +932,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_list_profiles(self):
-        """Test main function with list-profiles command."""
-        test_args = ['aws-hello-creds.py', 'list-profiles']
+        """Test main function with list command."""
+        test_args = ['aws-hello-creds.py', 'list']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -947,8 +947,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_remove_profile(self):
-        """Test main function with remove-profile command."""
-        test_args = ['aws-hello-creds.py', 'remove-profile', 'test-profile']
+        """Test main function with delete command."""
+        test_args = ['aws-hello-creds.py', 'delete', 'test-profile']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -962,8 +962,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_check_rotation(self):
-        """Test main function with check-rotation command."""
-        test_args = ['aws-hello-creds.py', 'check-rotation', 'test-profile']
+        """Test main function with rotate --check command."""
+        test_args = ['aws-hello-creds.py', 'rotate', '--check', 'test-profile']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -977,9 +977,9 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_rotate_credentials(self):
-        """Test main function with rotate-credentials command."""
+        """Test main function with rotate command."""
         test_args = [
-            'aws-hello-creds.py', 'rotate-credentials', 'test-profile',
+            'aws-hello-creds.py', 'rotate', 'test-profile',
             '--type', 'manual',
             '--access-key', 'AKIAIOSFODNN7EXAMPLE',
             '--secret-key', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
@@ -1003,8 +1003,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_list_backups(self):
-        """Test main function with list-backups command."""
-        test_args = ['aws-hello-creds.py', 'list-backups', '--profile', 'test-profile']
+        """Test main function with backup list command."""
+        test_args = ['aws-hello-creds.py', 'backup', 'list', '--profile', 'test-profile']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -1018,8 +1018,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_restore_backup(self):
-        """Test main function with restore-backup command."""
-        test_args = ['aws-hello-creds.py', 'restore-backup', 'test-profile', '20240101_120000']
+        """Test main function with backup restore command."""
+        test_args = ['aws-hello-creds.py', 'backup', 'restore', 'test-profile', '20240101_120000']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -1033,8 +1033,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_encrypt_profile(self):
-        """Test main function with encrypt-profile command."""
-        test_args = ['aws-hello-creds.py', 'encrypt-profile', 'test-profile', '--delete-plain']
+        """Test main function with profile encrypt command."""
+        test_args = ['aws-hello-creds.py', 'profile', 'encrypt', 'test-profile', '--delete-plain']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -1048,8 +1048,8 @@ class TestCLIMain:
     
     @pytest.mark.asyncio
     async def test_main_decrypt_profile(self):
-        """Test main function with decrypt-profile command."""
-        test_args = ['aws-hello-creds.py', 'decrypt-profile', '/path/to/file.enc', '--profile', 'new-name']
+        """Test main function with profile decrypt command."""
+        test_args = ['aws-hello-creds.py', 'profile', 'decrypt', '/path/to/file.enc', '--profile', 'new-name']
         
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
@@ -1064,52 +1064,52 @@ class TestCLIMain:
     @pytest.mark.asyncio
     async def test_main_windows_hello_error(self):
         """Test main function handling WindowsHelloError."""
-        test_args = ['aws-hello-creds.py', 'list-profiles']
-        
+        test_args = ['aws-hello-creds.py', 'list']
+
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
                 mock_manager = MagicMock()
                 mock_manager.list_profiles = AsyncMock(side_effect=aws_hello_creds.WindowsHelloError("Test error"))
                 mock_manager_class.return_value = mock_manager
-                
+
                 with patch('sys.stderr') as mock_stderr:
                     with pytest.raises(SystemExit) as exc_info:
                         await aws_hello_creds.main()
-                    
+
                     assert exc_info.value.code == 1
     
     @pytest.mark.asyncio
     async def test_main_file_not_found_error(self):
         """Test main function handling FileNotFoundError."""
-        test_args = ['aws-hello-creds.py', 'list-profiles']
-        
+        test_args = ['aws-hello-creds.py', 'list']
+
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
                 mock_manager = MagicMock()
                 mock_manager.list_profiles = AsyncMock(side_effect=FileNotFoundError("File not found"))
                 mock_manager_class.return_value = mock_manager
-                
+
                 with patch('sys.stderr') as mock_stderr:
                     with pytest.raises(SystemExit) as exc_info:
                         await aws_hello_creds.main()
-                    
+
                     assert exc_info.value.code == 1
     
     @pytest.mark.asyncio
     async def test_main_unexpected_error(self):
         """Test main function handling unexpected errors."""
-        test_args = ['aws-hello-creds.py', 'list-profiles']
-        
+        test_args = ['aws-hello-creds.py', 'list']
+
         with patch('sys.argv', test_args):
             with patch('aws_hello_creds.AWSCredentialManager') as mock_manager_class:
                 mock_manager = MagicMock()
                 mock_manager.list_profiles = AsyncMock(side_effect=RuntimeError("Unexpected error"))
                 mock_manager_class.return_value = mock_manager
-                
+
                 with patch('sys.stderr') as mock_stderr:
                     with pytest.raises(SystemExit) as exc_info:
                         await aws_hello_creds.main()
-                    
+
                     assert exc_info.value.code == 1
     
     def test_cli_main(self):
@@ -1508,8 +1508,9 @@ class TestUpdateAWSConfigAdditional:
         manager._ensure_directories()
         with patch('shutil.which', return_value='C:/Tools/aws-hello-creds'):
             await manager._update_aws_config("prof", "us-west-2")
-        content = (manager.aws_dir / "config").read_text(encoding='utf-8')
-        assert "aws-hello-creds get-credentials" in content
+        cfg_path = manager.aws_dir / "config"
+        content = cfg_path.read_text(encoding='utf-8')
+        assert "credential_process = aws-hello-creds get prof --format credential-process" in content
 
     @pytest.mark.asyncio
     async def test_update_aws_config_removes_region_when_none(self, manager):

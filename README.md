@@ -9,191 +9,122 @@
 
 Secure AWS credential storage and file encryption using Windows Hello biometric authentication.
 
-## Quick Start
+## Quick start
 
 ### Install
+
 ```bash
 pip install winhello-crypto
 ```
 
 ### AWS Credentials Manager
-```bash
-# Store AWS credentials
-aws-hello-creds set myprofile --access-key AKIA... --secret-key secret123
 
-# Use stored credentials  
-aws-hello-creds get myprofile
-
-# List all profiles
-aws-hello-creds list
-
-# Export as environment variables
-aws-hello-creds export myprofile
-```
-
-### File Encryption
-```bash
-# Encrypt a file
-winhello-crypto encrypt myfile.txt
-
-# Decrypt a file
-winhello-crypto decrypt myfile.txt.enc
-```
-
-## AWS Credentials Manager Commands
-
-### Basic Operations
 ```bash
 # Store credentials
-aws-hello-creds set <profile> --access-key <key> --secret-key <secret> [--session-token <token>] [--region <region>]
+aws-hello-creds set <profile> --access-key <key> --secret-key <secret> [--session-token <token>] [--region <region>"
 
 # Retrieve credentials
-aws-hello-creds get <profile> [--format json|env|ini]
+aws-hello-creds get <profile> --format credential-process|json|ini
 
-# List all profiles
+# List profiles
 aws-hello-creds list [--format table|json]
+
+# Export to environment variables
+aws-hello-creds export <profile> --shell powershell|cmd|bash
 
 # Delete credentials
 aws-hello-creds delete <profile>
-
-# Check if profile exists
-aws-hello-creds exists <profile>
 ```
 
-### Advanced Operations
-```bash
-# Backup all credentials to encrypted file
-aws-hello-creds backup --file backup.enc
-
-# Restore credentials from backup
-aws-hello-creds restore --file backup.enc
-
-# Rotate credentials (requires AWS CLI configured)
-aws-hello-creds rotate <profile>
-
-# Export as environment variables
-aws-hello-creds export <profile> [--shell bash|powershell|cmd]
-
-# Copy profile
-aws-hello-creds copy <source> <destination>
-
-# Update existing profile
-aws-hello-creds update <profile> [--access-key <key>] [--secret-key <secret>] [--session-token <token>] [--region <region>]
-```
-
-### File Operations
-```bash
-# Encrypt file with profile credentials
-aws-hello-creds encrypt-file <profile> <input-file> [--output <output-file>]
-
-# Decrypt file with profile credentials
-aws-hello-creds decrypt-file <profile> <input-file> [--output <output-file>]
-```
-
-## File Encryption Commands
+### File encryption
 
 ```bash
-# Encrypt file
-winhello-crypto encrypt <input-file> [--output <output-file>]
+# Encrypt (default output: <input>.enc)
+winhello-crypto encrypt <input-file> [-o <output-file>"
 
-# Decrypt file
-winhello-crypto decrypt <input-file> [--output <output-file>]
+# Decrypt (default output: strip .enc or add .dec)
+winhello-crypto decrypt <input-file> [-o <output-file>"
 
-# Verify integrity
+# Verify integrity of an encrypted file
 winhello-crypto verify <encrypted-file>
 ```
 
-## Use Cases
+## AWS Credentials Manager commands
 
-### Development Workflows
+### Basic operations
+
 ```bash
-# Set up dev environment
-aws-hello-creds set dev --access-key AKIA... --secret-key secret123 --region us-west-2
-aws-hello-creds export dev --shell powershell
-
-# Switch to production
-aws-hello-creds export prod --shell powershell
+aws-hello-creds set <profile> --access-key <key> --secret-key <secret> [--session-token <token>] [--region <region>]
+aws-hello-creds get <profile> --format credential-process|json|ini
+aws-hello-creds list [--format table|json]
+aws-hello-creds export <profile> --shell powershell|cmd|bash
+aws-hello-creds delete <profile>
 ```
 
-### CI/CD Integration
-```bash
-# Backup before deployment
-aws-hello-creds backup --file pre-deploy-backup.enc
+### Advanced operations
 
-# Restore if needed
-aws-hello-creds restore --file pre-deploy-backup.enc
+```bash
+# Check if rotation is recommended
+aws-hello-creds rotate --check <profile>
+
+# Rotate credentials
+aws-hello-creds rotate <profile> [--type auto|manual|temporary|access-key] \
+  [--access-key <key>] [--secret-key <secret>] [--session-token <token>"
+
+# Backups of stored profiles
+aws-hello-creds backup list [--profile <profile>]
+aws-hello-creds backup restore <profile> <YYYYMMDD_HHMMSS>
+
+# Manage ~/.aws/config profiles (encrypt/decrypt)
+aws-hello-creds profile encrypt <name> [--output <file>] [--delete-plain]
+aws-hello-creds profile decrypt <file> [--profile <name>]
 ```
 
-### Secure File Sharing
-```bash
-# Encrypt sensitive files
-winhello-crypto encrypt config.json
-winhello-crypto encrypt database-backup.sql
+## File encryption commands
 
-# Share encrypted files safely
-# Recipients need Windows Hello to decrypt
+```bash
+winhello-crypto encrypt <input-file> [-o <output-file>]
+winhello-crypto decrypt <input-file> [-o <output-file>]
+winhello-crypto verify <encrypted-file>
 ```
 
-## Security Features
+## Security features
 
-- **Windows Hello Integration**: Uses biometric authentication (fingerprint, face, PIN)
-- **AES-256-GCM Encryption**: Military-grade encryption for stored credentials
-- **No Plain Text Storage**: All credentials encrypted at rest
-- **Secure Key Derivation**: PBKDF2 with high iteration count
-- **Memory Protection**: Sensitive data cleared from memory after use
+- Windows Hello integration (biometric/PIN)
+- AES-256-GCM encryption, integrity-checked
+- No plaintext at rest; atomic writes
+- Argon2id key derivation
+- Basic rate limiting and audit logging
 
 ## Requirements
 
 - Windows 10/11 with Windows Hello enabled
 - Python 3.7+
-- Biometric device (fingerprint reader, camera) or PIN set up
 
 ## Troubleshooting
 
-### Windows Hello Not Available
-```
-Error: Windows Hello is not available on this device
-```
-**Solution**: Enable Windows Hello in Settings > Accounts > Sign-in options
-
-### Authentication Failed
-```
-Error: User verification failed
-```
-**Solution**: 
-- Ensure biometric device is working
-- Try using PIN if biometric fails
-- Check Windows Hello is enabled for apps
-
-### Profile Not Found
-```
-Error: Profile 'myprofile' not found
-```
-**Solution**: Use `aws-hello-creds list` to see available profiles
-
-### Permission Denied
-```
-Error: Access denied to Windows Credential Manager
-```
-**Solution**: Run as administrator or check Windows Credential Manager permissions
+- Windows Hello not available: enable via Settings > Accounts > Sign-in options
+- Authentication failed: ensure biometric/PIN is set up and unlocked
+- Profile not found: use `aws-hello-creds list` to view existing profiles
+- Permission denied to Credential Manager: try running the shell as Administrator
 
 ## Development
 
 ```bash
-# Install development dependencies
+# Install dev deps
 pip install -e ".[dev]"
 
 # Run tests
 pytest
 
-# Run security checks
+# Security checks (optional)
 bandit -r .
 safety check
 
-# Format code
+# Format
 black .
 ```
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE).
