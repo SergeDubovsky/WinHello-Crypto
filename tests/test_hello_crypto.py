@@ -993,6 +993,57 @@ class TestMainFunctionCoverage:
             assert any("Windows Hello Error" in args[0] for args, _ in mp2.call_args_list)
 
 
+class TestDefaultsAndVerify:
+    @pytest.mark.asyncio
+    async def test_default_output_paths_encrypt_and_decrypt(self):
+        """Cover default output computation when output_file is not provided."""
+        with patch('hello_crypto.FileEncryptor') as mock_cls:
+            inst = mock_cls.return_value
+            inst.encrypt_file = AsyncMock()
+            inst.decrypt_file = AsyncMock()
+
+            from hello_crypto import main_encrypt_decrypt
+            # Encrypt default -> appends .enc
+            await main_encrypt_decrypt("encrypt", "C:/tmp/foo.txt", None)
+            from pathlib import Path as _P
+            exp1 = str(_P("C:/tmp/foo.txt").with_suffix(".txt.enc"))
+            inst.encrypt_file.assert_awaited_with("C:/tmp/foo.txt", exp1)
+
+            # Decrypt default: strip .enc
+            await main_encrypt_decrypt("decrypt", "C:/tmp/bar.txt.enc", None)
+            exp2 = str(_P("C:/tmp/bar.txt.enc").with_name("bar.txt"))
+            inst.decrypt_file.assert_awaited_with("C:/tmp/bar.txt.enc", exp2)
+
+            # Decrypt default: add .dec when no .enc suffix
+            await main_encrypt_decrypt("decrypt", "C:/tmp/data.bin", None)
+            exp3 = str(_P("C:/tmp/data.bin").with_suffix(".bin.dec"))
+            inst.decrypt_file.assert_awaited_with("C:/tmp/data.bin", exp3)
+
+    @pytest.mark.asyncio
+    async def test_main_verify_success(self, monkeypatch, tmp_path):
+        """Cover verify path success (prints pass and returns 0)."""
+        # Create a dummy file to read
+        f = tmp_path / "enc.bin"
+        f.write_bytes(b"ciphertext")
+
+        # Patch FileEncryptor instance methods
+        import hello_crypto as hc
+        with patch('hello_crypto.FileEncryptor') as mock_cls, \
+             patch('builtins.print') as mock_print:
+            inst = mock_cls.return_value
+            inst.is_supported = AsyncMock(return_value=True)
+            inst.ensure_key_exists = AsyncMock()
+            inst.derive_key_from_signature = AsyncMock(return_value=b"k"*32)
+            inst.decrypt_data = MagicMock(return_value=b"ok")
+
+            rc = await hc.main_verify(str(f))
+            assert rc == 0
+            # Ensure decrypt_data was called
+            inst.decrypt_data.assert_called_once()
+            # Printed success
+            assert any("Integrity check passed" in args[0] for args, _ in mock_print.call_args_list)
+
+
 class TestBringWindowToForegroundCoverage:
     """Test window management functions with Windows API available."""
     
