@@ -390,6 +390,27 @@ class TestOptionAExtras:
                 await ahc.main()
                 # Pretty JSON path should print a JSON dict of credentials
                 assert any('{"aws_access_key_id"' in args[0] for args, _ in mp.call_args_list)
+
+    @pytest.mark.asyncio
+    async def test_cli_rotate_check_and_backup_list(self, tmp_path):
+        import aws_hello_creds as ahc
+        # rotate --check
+        with patch('sys.argv', ['aws-hello-creds.py', 'rotate', '--check', 'prof']), \
+             patch('aws_hello_creds.AWSCredentialManager') as mgr_cls:
+            mgr = MagicMock()
+            mgr.check_rotation_needed = AsyncMock()
+            mgr_cls.return_value = mgr
+            await ahc.main()
+            mgr.check_rotation_needed.assert_awaited_once_with('prof')
+
+        # backup list
+        with patch('sys.argv', ['aws-hello-creds.py', 'backup', 'list']), \
+             patch('aws_hello_creds.AWSCredentialManager') as mgr_cls:
+            mgr = MagicMock()
+            mgr.list_backups = AsyncMock()
+            mgr_cls.return_value = mgr
+            await ahc.main()
+            mgr.list_backups.assert_awaited_once_with(None)
     
     @pytest.mark.asyncio
     async def test_output_credentials_json_with_session_token(self):
