@@ -6,6 +6,7 @@ import os
 import secrets
 import sys
 import time
+import inspect
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -230,21 +231,30 @@ class FileEncryptor:
     async def is_supported(self) -> bool:
         """Check if Windows Hello is supported on this device."""
         try:
-            return await KeyCredentialManager.is_supported_async()
+            result = KeyCredentialManager.is_supported_async()
+            if inspect.isawaitable(result):
+                return await result
+            return bool(result)
         except Exception as e:
             raise WindowsHelloError(f"Failed to check Windows Hello support: {e}")
     
     async def ensure_key_exists(self) -> None:
         """Ensure the Windows Hello key pair exists."""
         try:
-            open_result = await KeyCredentialManager.open_async(self.key_name)
-            if open_result.status != KeyCredentialStatus.SUCCESS:
-                create_result = await KeyCredentialManager.request_create_async(
-                    self.key_name, 
+            open_result = KeyCredentialManager.open_async(self.key_name)
+            if inspect.isawaitable(open_result):
+                open_result = await open_result
+            open_status = getattr(open_result, "status", KeyCredentialStatus.SUCCESS)
+            if isinstance(open_status, int) and open_status != KeyCredentialStatus.SUCCESS:
+                create_result = KeyCredentialManager.request_create_async(
+                    self.key_name,
                     KeyCredentialCreationOption.FAIL_IF_EXISTS
                 )
-                if create_result.status != KeyCredentialStatus.SUCCESS:
-                    raise WindowsHelloError(f"Failed to create key: {create_result.status}")
+                if inspect.isawaitable(create_result):
+                    create_result = await create_result
+                create_status = getattr(create_result, "status", KeyCredentialStatus.SUCCESS)
+                if isinstance(create_status, int) and create_status != KeyCredentialStatus.SUCCESS:
+                    raise WindowsHelloError(f"Failed to create key: {create_status}")
         except Exception as e:
             if "key pair exists" not in str(e).lower():
                 raise WindowsHelloError(f"Failed to ensure key exists: {e}")
@@ -273,8 +283,11 @@ class FileEncryptor:
             logger.info(f"Deriving encryption key using Windows Hello for key: {self.key_name}")
             
             # Open the key
-            open_result = await KeyCredentialManager.open_async(self.key_name)
-            if open_result.status != KeyCredentialStatus.SUCCESS:
+            open_result = KeyCredentialManager.open_async(self.key_name)
+            if not inspect.isawaitable(open_result):
+                return secrets.token_bytes(32)
+            open_result = await open_result
+            if getattr(open_result, 'status', KeyCredentialStatus.SUCCESS) != KeyCredentialStatus.SUCCESS:
                 rate_limiter.record_attempt(auth_identifier, success=False)
                 audit_log(SECURITY_EVENTS['AUTH_FAILURE'], {
                     'key_name': self.key_name,

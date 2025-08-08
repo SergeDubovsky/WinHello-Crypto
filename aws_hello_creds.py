@@ -1024,16 +1024,34 @@ class AWSCredentialManager:
             return 'zsh'
         elif 'sh' in shell_env and 'bash' not in shell_env:
             return 'sh'
-        
+
         # Check for PowerShell specific environment variables
         if os.environ.get('PSModulePath') or os.environ.get('POWERSHELL_DISTRIBUTION_CHANNEL'):
             return 'powershell'
-        
+
         # Check for PowerShell execution policy (PowerShell specific)
         if os.environ.get('PSExecutionPolicyPreference'):
             return 'powershell'
-        
-        # Check parent process name (Windows)
+
+        # Check for Windows Command Prompt
+        if os.environ.get('COMSPEC', '').lower().endswith('cmd.exe'):
+            return 'cmd'
+
+        # Check for Windows Terminal
+        if os.environ.get('WT_SESSION'):
+            return 'powershell'  # Windows Terminal typically uses PowerShell
+
+        # Check VS Code integrated terminal
+        if os.environ.get('TERM_PROGRAM') == 'vscode':
+            if os.environ.get('PSModulePath'):
+                return 'powershell'
+            return 'powershell'
+
+        # Check for WSL environment
+        if os.environ.get('WSL_DISTRO_NAME'):
+            return 'bash'
+
+        # Check parent process name (Windows) after env checks
         try:
             import psutil
             parent = psutil.Process().parent()
@@ -1048,30 +1066,9 @@ class AWSCredentialManager:
                 elif 'zsh' in parent_name:
                     return 'zsh'
                 elif 'windowsterminal' in parent_name or 'wt' in parent_name:
-                    # Windows Terminal - check for PowerShell as default
                     return 'powershell'
         except (ImportError, Exception):
-            # psutil not available or other error, continue with other detection methods
             pass
-        
-        # Check for Windows Command Prompt
-        if os.environ.get('COMSPEC', '').lower().endswith('cmd.exe'):
-            return 'cmd'
-        
-        # Check for WSL or Linux environment
-        if os.environ.get('WSL_DISTRO_NAME') or os.path.exists('/proc/version'):
-            return 'bash'
-        
-        # Check for Windows Terminal
-        if os.environ.get('WT_SESSION'):
-            return 'powershell'  # Windows Terminal typically uses PowerShell
-        
-        # Check VS Code integrated terminal
-        if os.environ.get('TERM_PROGRAM') == 'vscode':
-            # In VS Code, check for PowerShell specific vars
-            if os.environ.get('PSModulePath'):
-                return 'powershell'
-            return 'powershell'  # Default to PowerShell in VS Code on Windows
         
         # Default based on OS
         if os.name == 'nt':  # Windows
