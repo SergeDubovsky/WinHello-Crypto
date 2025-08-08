@@ -345,6 +345,51 @@ class TestCLIFunctions:
 
             finally:
                 sys.stdout = sys.__stdout__
+
+class TestOptionAExtras:
+    @pytest.mark.asyncio
+    async def test_cli_list_json_format(self, monkeypatch, tmp_path):
+        import aws_hello_creds as ahc
+        # Prepare fake profiles
+        mgr = ahc.AWSCredentialManager()
+        mgr.aws_dir = tmp_path / ".aws"
+        mgr.credentials_dir = mgr.aws_dir / "hello-encrypted"
+        mgr.credentials_dir.mkdir(parents=True, exist_ok=True)
+        (mgr.credentials_dir / "a.enc").write_bytes(b"x")
+        (mgr.credentials_dir / "b.enc").write_bytes(b"x")
+
+        with patch('aws_hello_creds.AWSCredentialManager', return_value=mgr):
+            with patch('sys.argv', ['aws-hello-creds.py', 'list', '--format', 'json']), \
+                 patch('builtins.print') as mp:
+                await ahc.main()
+                # Expect a JSON array with profile names
+                assert mp.called
+                out = None
+                for args, _ in mp.call_args_list:
+                    if args and isinstance(args[0], str) and args[0].startswith('['):
+                        out = args[0]
+                        break
+                assert out is not None
+                assert '"a"' in out and '"b"' in out
+
+    @pytest.mark.asyncio
+    async def test_cli_get_pretty_json(self):
+        import aws_hello_creds as ahc
+        creds = {
+            "aws_access_key_id": "AKIA...",
+            "aws_secret_access_key": "SECRET...",
+            "aws_session_token": "TOK",
+            "created_at": 1.0,
+        }
+        with patch('aws_hello_creds.AWSCredentialManager') as mgr_cls:
+            mgr = MagicMock()
+            mgr.get_credentials = AsyncMock(return_value=creds)
+            mgr_cls.return_value = mgr
+            with patch('sys.argv', ['aws-hello-creds.py', 'get', 'p', '--format', 'json']), \
+                 patch('builtins.print') as mp:
+                await ahc.main()
+                # Pretty JSON path should print a JSON dict of credentials
+                assert any('{"aws_access_key_id"' in args[0] for args, _ in mp.call_args_list)
     
     @pytest.mark.asyncio
     async def test_output_credentials_json_with_session_token(self):
