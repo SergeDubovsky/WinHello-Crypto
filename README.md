@@ -21,7 +21,7 @@ pip install winhello-crypto
 
 ```bash
 # Store credentials
-aws-hello-creds set <profile> --access-key <key> --secret-key <secret> [--session-token <token>] [--region <region>"
+aws-hello-creds set <profile> --access-key <key> --secret-key <secret> [--session-token <token>] [--region <region>]
 
 # Retrieve credentials
 aws-hello-creds get <profile> --format credential-process|json|ini
@@ -40,10 +40,10 @@ aws-hello-creds delete <profile>
 
 ```bash
 # Encrypt (default output: <input>.enc)
-winhello-crypto encrypt <input-file> [-o <output-file>"
+winhello-crypto encrypt <input-file> [-o <output-file>]
 
 # Decrypt (default output: strip .enc or add .dec)
-winhello-crypto decrypt <input-file> [-o <output-file>"
+winhello-crypto decrypt <input-file> [-o <output-file>]
 
 # Verify integrity of an encrypted file
 winhello-crypto verify <encrypted-file>
