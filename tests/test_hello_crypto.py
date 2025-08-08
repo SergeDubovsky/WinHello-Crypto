@@ -1044,6 +1044,30 @@ class TestDefaultsAndVerify:
             assert any("Integrity check passed" in args[0] for args, _ in mock_print.call_args_list)
 
 
+class TestCliEntrypointsNew:
+    def test_cli_main_encrypt_subcommand_invokes_main_encrypt_decrypt(self):
+        # Patch the coroutine to avoid real work
+        with patch('hello_crypto.main_encrypt_decrypt', new_callable=AsyncMock) as mock_main:
+            # Also patch ArgumentParser.exit to avoid test exiting on parse errors
+            with patch('argparse.ArgumentParser.exit', side_effect=SystemExit) as _:
+                with patch('sys.argv', ['winhello-crypto', 'encrypt', 'in.txt', '-o', 'out.enc']):
+                    from hello_crypto import cli_main
+                    try:
+                        cli_main()
+                    except SystemExit:
+                        pass
+                    mock_main.assert_awaited_once_with('encrypt', 'in.txt', 'out.enc')
+
+    def test_cli_main_verify_nonzero_exits(self):
+        with patch('hello_crypto.main_verify', new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = 1
+            with patch('sys.argv', ['winhello-crypto', 'verify', 'file.enc']):
+                from hello_crypto import cli_main
+                with pytest.raises(SystemExit) as exc:
+                    cli_main()
+                assert exc.value.code != 0
+
+
 class TestBringWindowToForegroundCoverage:
     """Test window management functions with Windows API available."""
     
