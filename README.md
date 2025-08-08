@@ -36,6 +36,42 @@ aws-hello-creds export <profile> --shell powershell|cmd|bash
 aws-hello-creds delete <profile>
 ```
 
+## How it integrates with AWS CLI (credential_process)
+
+This project’s primary purpose is to serve credentials to the AWS CLI securely via credential_process.
+
+- You store your AWS keys encrypted with Windows Hello, scoped per profile:
+
+```bash
+aws-hello-creds set my-profile --access-key AKIA... --secret-key ... [--session-token ...] [--region us-east-1]
+```
+
+- The tool writes or updates your %USERPROFILE%/.aws/config to include a credential_process entry that the AWS CLI will invoke whenever it needs credentials:
+
+```ini
+[profile my-profile]
+region = us-east-1    # optional; set if provided on set
+output = json         # default
+credential_process = aws-hello-creds get my-profile --format credential-process
+```
+
+When you run an AWS CLI command with --profile my-profile, the CLI executes the credential_process command. Our tool then:
+
+1) Prompts Windows Hello for biometric/PIN verification.
+2) Decrypts and validates the stored credentials for that profile.
+3) Prints credentials in the exact JSON format the AWS CLI expects (Version, AccessKeyId, SecretAccessKey, and optional SessionToken), along with an Expiration if available.
+
+You don’t need static keys in plain text files; the keys remain encrypted at rest and are only decrypted on-demand after successful Windows Hello verification.
+
+Manual configuration: if you prefer to edit config yourself, ensure each profile section uses the following pattern:
+
+```ini
+[profile <name>]
+region = <region>         # optional
+output = json             # optional
+credential_process = aws-hello-creds get <name> --format credential-process
+```
+
 ### File encryption
 
 ```bash
