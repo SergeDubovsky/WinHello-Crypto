@@ -677,6 +677,24 @@ class TestFileEncryptorErrorPaths:
                 shutil.rmtree(temp_dir)
 
     @pytest.mark.asyncio
+    async def test_encrypt_file_cleanup_on_error_unlink(self, encryptor, test_key, tmp_path):
+        """Ensure temp file is unlinked on error path (line 468)."""
+        inp = tmp_path / "in.txt"
+        outp = tmp_path / "out.enc"
+        inp.write_text("data")
+        # Pre-create temp file to force unlink branch
+        tmpf = outp.with_suffix('.tmp')
+        tmpf.write_bytes(b"junk")
+        with patch('hello_crypto.validate_file_path', side_effect=lambda p, m: Path(p)), \
+             patch.object(encryptor, 'is_supported', return_value=True), \
+             patch.object(encryptor, 'ensure_key_exists'), \
+             patch.object(encryptor, 'derive_key_from_signature', return_value=test_key), \
+             patch.object(encryptor, 'encrypt_data', side_effect=ValueError("bad enc")):
+            with pytest.raises(ValueError, match="bad enc"):
+                await encryptor.encrypt_file(str(inp), str(outp))
+        assert not tmpf.exists()
+
+    @pytest.mark.asyncio
     async def test_decrypt_file_cleanup_on_error_in_try(self, encryptor, test_key):
         """Ensure decrypt_file cleans temp and logs on error inside try block."""
         temp_dir = Path.cwd() / "dec_cleanup_temp"
@@ -790,30 +808,105 @@ class TestFileEncryptorErrorPaths:
                 encryptor.decrypt_data(data, test_key)
             mock_audit.assert_called()
 
+    @pytest.mark.asyncio
+    async def test_encrypt_file_unsupported(self, encryptor, tmp_path):
+        """Cover unsupported device branch in encrypt_file (line 426)."""
+        inp = tmp_path / "in.txt"
+        outp = tmp_path / "out.bin"
+        inp.write_text("data")
+        with patch('hello_crypto.validate_file_path', side_effect=lambda p, m: Path(p)), \
+             patch.object(encryptor, 'is_supported', return_value=False):
+            import hello_crypto as hc
+            with pytest.raises(hc.WindowsHelloError, match="not supported"):
+                await encryptor.encrypt_file(str(inp), str(outp))
+
+    @pytest.mark.asyncio
+    async def test_decrypt_file_unsupported(self, encryptor, tmp_path):
+        """Cover unsupported device branch in decrypt_file (line 480)."""
+        inp = tmp_path / "in.bin"
+        outp = tmp_path / "out.txt"
+        inp.write_bytes(b"\x00"*32)
+        with patch('hello_crypto.validate_file_path', side_effect=lambda p, m: Path(p)), \
+             patch.object(encryptor, 'is_supported', return_value=False):
+            import hello_crypto as hc
+            with pytest.raises(hc.WindowsHelloError, match="not supported"):
+                await encryptor.decrypt_file(str(inp), str(outp))
+
+    @pytest.mark.asyncio
+    async def test_decrypt_file_missing_and_empty(self, encryptor, tmp_path, test_key):
+        """Cover missing file (497) and empty ciphertext (502)."""
+        # Missing file
+        with patch('hello_crypto.validate_file_path', side_effect=lambda p, m: Path(p)), \
+             patch.object(encryptor, 'is_supported', return_value=True), \
+             patch.object(encryptor, 'ensure_key_exists'), \
+             patch.object(encryptor, 'derive_key_from_signature', return_value=test_key):
+            with pytest.raises(FileNotFoundError):
+                await encryptor.decrypt_file(str(tmp_path/"nope.bin"), str(tmp_path/"out.txt"))
+
+        # Empty ciphertext
+        inp = tmp_path / "empty.bin"
+        outp = tmp_path / "out.txt"
+        inp.write_bytes(b"")
+        with patch('hello_crypto.validate_file_path', side_effect=lambda p, m: Path(p)), \
+             patch.object(encryptor, 'is_supported', return_value=True), \
+             patch.object(encryptor, 'ensure_key_exists'), \
+             patch.object(encryptor, 'derive_key_from_signature', return_value=test_key):
+            with pytest.raises(ValueError, match="Cannot decrypt empty file"):
+                await encryptor.decrypt_file(str(inp), str(outp))
+
+    @pytest.mark.asyncio
+    async def test_decrypt_file_cleanup_on_error(self, encryptor, tmp_path, test_key):
+        """Ensure temp file is unlinked on error (line 522)."""
+        inp = tmp_path / "data.bin"
+        outp = tmp_path / "out.txt"
+        # Write minimal valid-looking bytes to get past length check; then force decrypt_data error
+        inp.write_bytes(b"\x00"*32)
+        # Pre-create temp file to ensure unlink branch runs
+        temp = outp.with_suffix('.tmp')
+        temp.write_bytes(b"junk")
+        with patch('hello_crypto.validate_file_path', side_effect=lambda p, m: Path(p)), \
+             patch.object(encryptor, 'is_supported', return_value=True), \
+             patch.object(encryptor, 'ensure_key_exists'), \
+             patch.object(encryptor, 'derive_key_from_signature', return_value=test_key), \
+             patch.object(encryptor, 'decrypt_data', side_effect=ValueError("bad decrypt")):
+            with pytest.raises(ValueError, match="bad decrypt"):
+                await encryptor.decrypt_file(str(inp), str(outp))
+        assert not temp.exists()
+
 
 class TestMainFunctionCoverage:
     """Test main function and CLI entry points."""
     
     @pytest.mark.asyncio
     async def test_main_encrypt_mode(self):
-        """Test main function in encrypt mode."""
-        # Patch the class so main uses a mocked instance
-        with patch('hello_crypto.FileEncryptor') as mock_cls:
-            inst = mock_cls.return_value
-            inst.encrypt_file = AsyncMock()
-            from hello_crypto import main
-            await main("encrypt", "input.txt", "output.enc")
-            inst.encrypt_file.assert_called_once_with("input.txt", "output.enc")
+       """Test main function in encrypt mode."""
+       # Patch the class so main uses a mocked instance
+       with patch('hello_crypto.FileEncryptor') as mock_cls, \
+           patch('builtins.print') as mock_print:
+          inst = mock_cls.return_value
+          inst.encrypt_file = AsyncMock()
+          from hello_crypto import main
+          await main("encrypt", "input.txt", "output.enc")
+          inst.encrypt_file.assert_called_once_with("input.txt", "output.enc")
+          # Verify success print
+          assert mock_print.called
+          msg, *_ = mock_print.call_args[0]
+          assert "File encrypted successfully." in msg
     
     @pytest.mark.asyncio
     async def test_main_decrypt_mode(self):
-        """Test main function in decrypt mode."""
-        with patch('hello_crypto.FileEncryptor') as mock_cls:
-            inst = mock_cls.return_value
-            inst.decrypt_file = AsyncMock()
-            from hello_crypto import main
-            await main("decrypt", "input.enc", "output.txt")
-            inst.decrypt_file.assert_called_once_with("input.enc", "output.txt")
+       """Test main function in decrypt mode."""
+       with patch('hello_crypto.FileEncryptor') as mock_cls, \
+           patch('builtins.print') as mock_print:
+          inst = mock_cls.return_value
+          inst.decrypt_file = AsyncMock()
+          from hello_crypto import main
+          await main("decrypt", "input.enc", "output.txt")
+          inst.decrypt_file.assert_called_once_with("input.enc", "output.txt")
+          # Verify success print
+          assert mock_print.called
+          msg, *_ = mock_print.call_args[0]
+          assert "File decrypted successfully." in msg
     
     @pytest.mark.asyncio
     async def test_main_windows_hello_error(self):
@@ -880,6 +973,25 @@ class TestMainFunctionCoverage:
             mock_parser.parse_args.assert_called_once()
             mock_run.assert_called_once()
 
+    def test_main_invalid_mode_and_errors(self):
+        """Cover invalid mode print (539) and WindowsHelloError print (542)."""
+        from hello_crypto import main
+        # Invalid mode
+        with patch('builtins.print') as mp:
+            asyncio.run(main("bogus", "a", "b"))
+            mp.assert_called()
+            assert any("Invalid mode" in args[0] for args, _ in mp.call_args_list)
+
+        # WindowsHelloError path
+        import hello_crypto as hc
+        with patch('hello_crypto.FileEncryptor') as mock_cls, \
+             patch('builtins.print') as mp2:
+            inst = mock_cls.return_value
+            inst.encrypt_file = AsyncMock(side_effect=hc.WindowsHelloError("no hello"))
+            asyncio.run(main("encrypt", "a", "b"))
+            mp2.assert_called()
+            assert any("Windows Hello Error" in args[0] for args, _ in mp2.call_args_list)
+
 
 class TestBringWindowToForegroundCoverage:
     """Test window management functions with Windows API available."""
@@ -941,6 +1053,27 @@ class TestBringWindowToForegroundCoverage:
 
             # Should still perform some window operations
             mock_user32.ShowWindow.assert_called()
+
+    def test_bring_window_to_foreground_same_thread(self):
+        """Cover branch where different window but same thread (lines 110-111)."""
+        with patch('hello_crypto.WINDOWS_API_AVAILABLE', True), \
+             patch('hello_crypto.os.name', 'nt'), \
+             patch('hello_crypto.user32') as mock_user32, \
+             patch('hello_crypto.kernel32') as mock_kernel32:
+
+            console = 44444
+            other = 55555
+            mock_kernel32.GetConsoleWindow.return_value = console
+            mock_user32.GetForegroundWindow.return_value = other  # Different window
+            # Same thread id path
+            mock_kernel32.GetCurrentThreadId.return_value = 777
+            mock_user32.GetWindowThreadProcessId.return_value = 777  # Same thread -> triggers lines 110-111
+
+            from hello_crypto import _bring_window_to_foreground
+            _bring_window_to_foreground()
+
+            mock_user32.SetForegroundWindow.assert_called()
+            mock_user32.SetFocus.assert_called()
 
     def test_bring_window_to_foreground_no_foreground(self):
         """Cover branch where there is no current foreground window."""
