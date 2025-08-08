@@ -69,7 +69,7 @@ aws-hello-creds rotate --check <profile>
 
 # Rotate credentials
 aws-hello-creds rotate <profile> [--type auto|manual|temporary|access-key] \
-  [--access-key <key>] [--secret-key <secret>] [--session-token <token>"
+  [--access-key <key>] [--secret-key <secret>] [--session-token <token>]
 
 # Backups of stored profiles
 aws-hello-creds backup list [--profile <profile>]
