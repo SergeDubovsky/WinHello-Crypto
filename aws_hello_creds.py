@@ -199,13 +199,13 @@ class AWSCredentialManager:
             try:
                 import shutil
                 if shutil.which("aws-hello-creds"):
-                    cp_cmd = f"aws-hello-creds get-credentials --profile {profile_name}"
+                    cp_cmd = f"aws-hello-creds get {profile_name} --format credential-process"
                 else:
                     script_path = Path(__file__).absolute()
-                    cp_cmd = f"python \"{script_path}\" get-credentials --profile {profile_name}"
+                    cp_cmd = f"python \"{script_path}\" get {profile_name} --format credential-process"
             except Exception:
                 script_path = Path(__file__).absolute()
-                cp_cmd = f"python \"{script_path}\" get-credentials --profile {profile_name}"
+                cp_cmd = f"python \"{script_path}\" get {profile_name} --format credential-process"
 
             parser.set(section_name, "credential_process", cp_cmd)
             if region:
@@ -1172,24 +1172,17 @@ class AWSCredentialManager:
 async def output_credentials_json(profile_name: str) -> None:
     """Output credentials in AWS credential_process JSON format."""
     manager = AWSCredentialManager()
-    
     try:
         credentials = await manager.get_credentials(profile_name)
-        
-        # Format for AWS credential_process
         output = {
             "Version": 1,
             "AccessKeyId": credentials["aws_access_key_id"],
-            "SecretAccessKey": credentials["aws_secret_access_key"]
+            "SecretAccessKey": credentials["aws_secret_access_key"],
         }
-        
         if "aws_session_token" in credentials:
             output["SessionToken"] = credentials["aws_session_token"]
-            
         print(json.dumps(output))
-
     except Exception as e:
-        # Write error to stderr so it doesn't interfere with JSON output
         print(f"Error retrieving credentials: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -1215,212 +1208,197 @@ async def output_credentials_plaintext(profile_name: str) -> None:
         sys.exit(1)
 
 
+async def output_credentials_pretty_json(profile_name: str) -> None:
+    """Output decrypted credentials as human-friendly JSON (not credential_process)."""
+    manager = AWSCredentialManager()
+    try:
+        credentials = await manager.get_credentials(profile_name)
+        print(json.dumps(credentials))
+    except Exception as e:
+        print(f"Error retrieving credentials: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 async def main():
-    """Main CLI interface."""
+    """Main CLI interface (Option A)."""
     parser = argparse.ArgumentParser(
         description="AWS Credentials Manager with Windows Hello Encryption",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Add credentials for a profile
-  python aws-hello-creds.py add-profile my-profile --access-key AKIA... --secret-key xyz123... --region us-east-1
+  # Set credentials
+  aws-hello-creds set my-profile --access-key AKIA... --secret-key xyz123... --region us-east-1
 
-  # Add credentials with session token (for temporary credentials)
-  python aws-hello-creds.py add-profile temp-profile --access-key AKIA... --secret-key xyz123... --session-token IQoJ...
+  # Get credentials
+  aws-hello-creds get my-profile --format credential-process   # for AWS CLI
+  aws-hello-creds get my-profile --format json                  # raw JSON
+  aws-hello-creds get my-profile --format ini                   # key=value
 
-  # List all profiles
-  python aws-hello-creds.py list-profiles
+  # List profiles
+  aws-hello-creds list
 
-  # Get credentials (used by AWS CLI via credential_process)
-  python aws-hello-creds.py get-credentials --profile my-profile
+  # Export env vars for current shell
+  aws-hello-creds export my-profile --shell powershell|cmd|bash
 
-  # Set environment variables for terminal session
-  python aws-hello-creds.py set-env my-profile
-  python aws-hello-creds.py set-env my-profile --shell powershell
-  python aws-hello-creds.py set-env my-profile --shell cmd
-  python aws-hello-creds.py set-env my-profile --shell bash
+  # Delete a profile
+  aws-hello-creds delete my-profile
 
-  # Remove a profile
-  python aws-hello-creds.py remove-profile my-profile
+  # Rotation
+  aws-hello-creds rotate my-profile                             # auto
+  aws-hello-creds rotate my-profile --type manual \
+      --access-key AKIA... --secret-key SECRET...
+  aws-hello-creds rotate --check my-profile
 
-Credential Rotation Examples:
-  # Check if credentials need rotation
-  python aws-hello-creds.py check-rotation my-profile
-  
-  # Auto-rotate (detects credential type)
-  python aws-hello-creds.py rotate-credentials my-profile
-  
-  # Manual rotation with new credentials
-  python aws-hello-creds.py rotate-credentials my-profile --type manual \\
-    --access-key AKIA... --secret-key SECRET...
-  
-  # List available backups
-  python aws-hello-creds.py list-backups
-  python aws-hello-creds.py list-backups --profile my-profile
-  
-  # Restore from backup
-  python aws-hello-creds.py restore-backup my-profile 20250806_143000
+  # Backups
+  aws-hello-creds backup list [--profile my-profile]
+  aws-hello-creds backup restore my-profile 20250806_143000
 
-Profile Management:
-  # Encrypt an existing AWS profile from ~/.aws/config (saves to ~/.aws/hello-encrypted/)
-  python aws-hello-creds.py encrypt-profile my-profile
-  python aws-hello-creds.py encrypt-profile my-profile --output my-secure-profile.enc
-  python aws-hello-creds.py encrypt-profile my-profile --delete-plain  # Remove from config after encryption
-  
-  # Decrypt and restore profile to ~/.aws/config
-  python aws-hello-creds.py decrypt-profile ~/.aws/hello-encrypted/my-profile.enc
-  python aws-hello-creds.py decrypt-profile my-secure-profile.enc --profile new-profile-name
-
-AWS CLI Integration:
-  After adding a profile, it will be automatically configured in ~/.aws/config
-  You can then use it with: aws s3 ls --profile my-profile
-
-Environment Variables for Terminal Sessions:
-  The shell type is auto-detected, but you can override it if needed.
-  Use the set-env command to set AWS environment variables for your current shell session:
-  
-  PowerShell (auto-detected):
-    python aws-hello-creds.py set-env my-profile | Invoke-Expression
-    
-  Command Prompt (auto-detected):
-    for /f "delims=" %i in ('python aws-hello-creds.py set-env my-profile') do %i
-    
-  Bash/WSL (auto-detected):
-    eval "$(python aws-hello-creds.py set-env my-profile)"
-
-Security Features:
-  • Windows Hello biometric authentication for all operations
-  • Hardware-backed credential encryption and storage
-  • Automatic backup creation before credential rotation
-  • Comprehensive audit logging for security compliance
-  • Secure memory clearing of sensitive data
+  # Profile management from ~/.aws/config
+  aws-hello-creds profile encrypt my-profile [--output out.enc] [--delete-plain]
+  aws-hello-creds profile decrypt ~/.aws/hello-encrypted/my-profile.enc [--profile new-name]
         """
     )
-    
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    
-    # Add profile command
-    add_parser = subparsers.add_parser("add-profile", help="Add or update encrypted credentials for a profile")
-    add_parser.add_argument("profile_name", help="AWS profile name")
-    add_parser.add_argument("--access-key", required=True, help="AWS Access Key ID")
-    add_parser.add_argument("--secret-key", required=True, help="AWS Secret Access Key")
-    add_parser.add_argument("--session-token", help="AWS Session Token (for temporary credentials)")
-    add_parser.add_argument("--region", help="Default AWS region for this profile")
-    
-    # Get credentials command (for credential_process)
-    get_parser = subparsers.add_parser("get-credentials", help="Get credentials for a profile (credential_process format)")
-    get_parser.add_argument("--profile", required=True, help="Profile name")
 
-    # Export plain text credentials command
-    export_parser = subparsers.add_parser(
-        "export-profile",
-        help="Export decrypted credentials for a profile in plain text"
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    # set
+    p_set = subparsers.add_parser("set", help="Add or update credentials for a profile")
+    p_set.add_argument("profile_name", help="AWS profile name")
+    p_set.add_argument("--access-key", required=True, help="AWS Access Key ID")
+    p_set.add_argument("--secret-key", required=True, help="AWS Secret Access Key")
+    p_set.add_argument("--session-token", help="AWS Session Token (temporary creds)")
+    p_set.add_argument("--region", help="Default region")
+
+    # get
+    p_get = subparsers.add_parser("get", help="Get credentials in various formats")
+    p_get.add_argument("profile_name", help="Profile name")
+    p_get.add_argument(
+        "--format",
+        choices=["credential-process", "json", "ini"],
+        default="credential-process",
+        help="Output format",
     )
-    export_parser.add_argument("profile_name", help="Profile name")
 
-    # Set environment variables command
-    env_parser = subparsers.add_parser("set-env", help="Output commands to set AWS environment variables")
-    env_parser.add_argument("profile_name", help="Profile name")
-    env_parser.add_argument("--shell", choices=["powershell", "pwsh", "cmd", "batch", "bash", "sh", "zsh"], 
-                           help="Shell type for environment variable format (auto-detected if not specified)")
-    
-    # List profiles command
-    subparsers.add_parser("list-profiles", help="List all available encrypted profiles")
-    
-    # Remove profile command
-    remove_parser = subparsers.add_parser("remove-profile", help="Remove encrypted credentials for a profile")
-    remove_parser.add_argument("profile_name", help="Profile name to remove")
-    
-    # Check rotation status command
-    rotation_check_parser = subparsers.add_parser("check-rotation", help="Check if credentials need rotation")
-    rotation_check_parser.add_argument("profile_name", help="Profile name to check")
-    
-    # Rotate credentials command
-    rotate_parser = subparsers.add_parser("rotate-credentials", help="Rotate AWS credentials with backup")
-    rotate_parser.add_argument("profile_name", help="Profile name to rotate")
-    rotate_parser.add_argument("--type", choices=["auto", "manual", "temporary", "access-key"], 
-                              default="auto", help="Rotation type (auto-detected if not specified)")
-    rotate_parser.add_argument("--access-key", help="New AWS Access Key ID (for manual rotation)")
-    rotate_parser.add_argument("--secret-key", help="New AWS Secret Access Key (for manual rotation)")
-    rotate_parser.add_argument("--session-token", help="New AWS Session Token (for manual temporary rotation)")
-    
-    # List backups command
-    backup_list_parser = subparsers.add_parser("list-backups", help="List available credential backups")
-    backup_list_parser.add_argument("--profile", help="Filter backups for specific profile")
-    
-    # Restore from backup command
-    restore_parser = subparsers.add_parser("restore-backup", help="Restore credentials from backup")
-    restore_parser.add_argument("profile_name", help="Profile name to restore")
-    restore_parser.add_argument("backup_timestamp", help="Backup timestamp (format: YYYYMMDD_HHMMSS)")
-    
-    # Encrypt AWS profile command
-    encrypt_profile_parser = subparsers.add_parser("encrypt-profile", help="Encrypt an AWS profile from ~/.aws/config")
-    encrypt_profile_parser.add_argument("profile_name", help="Profile name to encrypt")
-    encrypt_profile_parser.add_argument("--output", help="Output file for encrypted profile (default: ~/.aws/hello-encrypted/<profile>.enc)")
-    encrypt_profile_parser.add_argument("--delete-plain", action="store_true", help="Delete the plain text profile from AWS config after successful encryption")
-    
-    # Decrypt AWS profile command 
-    decrypt_profile_parser = subparsers.add_parser("decrypt-profile", help="Decrypt and add AWS profile to ~/.aws/config")
-    decrypt_profile_parser.add_argument("encrypted_file", help="Path to encrypted profile file")
-    decrypt_profile_parser.add_argument("--profile", help="Override profile name (default: use name from encrypted file)")
-    
+    # list
+    p_list = subparsers.add_parser("list", help="List available encrypted profiles")
+    p_list.add_argument("--format", choices=["table", "json"], default="table")
+
+    # delete
+    p_del = subparsers.add_parser("delete", help="Delete encrypted credentials for a profile")
+    p_del.add_argument("profile_name", help="Profile name")
+
+    # export env
+    p_exp = subparsers.add_parser("export", help="Output commands to set AWS env vars")
+    p_exp.add_argument("profile_name", help="Profile name")
+    p_exp.add_argument(
+        "--shell",
+        choices=["powershell", "pwsh", "cmd", "batch", "bash", "sh", "zsh"],
+        help="Shell type (auto-detected if not specified)",
+    )
+
+    # rotate
+    p_rot = subparsers.add_parser("rotate", help="Rotate credentials or check rotation status")
+    p_rot.add_argument("profile_name", nargs="?", help="Profile name")
+    p_rot.add_argument("--check", action="store_true", help="Only check if rotation is needed")
+    p_rot.add_argument("--type", choices=["auto", "manual", "temporary", "access-key"], default="auto")
+    p_rot.add_argument("--access-key", help="New Access Key (manual)")
+    p_rot.add_argument("--secret-key", help="New Secret Key (manual)")
+    p_rot.add_argument("--session-token", help="New Session Token (manual temporary)")
+
+    # backup (group)
+    p_backup = subparsers.add_parser("backup", help="Backup operations")
+    sp_backup = p_backup.add_subparsers(dest="backup_cmd", required=True)
+    p_b_list = sp_backup.add_parser("list", help="List backups")
+    p_b_list.add_argument("--profile", help="Filter by profile")
+    p_b_restore = sp_backup.add_parser("restore", help="Restore from backup")
+    p_b_restore.add_argument("profile_name", help="Profile name")
+    p_b_restore.add_argument("backup_timestamp", help="YYYYMMDD_HHMMSS timestamp")
+
+    # profile (group)
+    p_prof = subparsers.add_parser("profile", help="Manage AWS config profiles (encrypt/decrypt)")
+    sp_prof = p_prof.add_subparsers(dest="profile_cmd", required=True)
+    p_prof_enc = sp_prof.add_parser("encrypt", help="Encrypt an AWS profile from ~/.aws/config")
+    p_prof_enc.add_argument("profile_name", help="Profile to encrypt")
+    p_prof_enc.add_argument("--output", help="Output encrypted file path")
+    p_prof_enc.add_argument("--delete-plain", action="store_true", help="Delete plain profile from config after encryption")
+    p_prof_dec = sp_prof.add_parser("decrypt", help="Decrypt an encrypted profile and add to ~/.aws/config")
+    p_prof_dec.add_argument("encrypted_file", help="Path to encrypted profile file")
+    p_prof_dec.add_argument("--profile", help="Override profile name")
+
     args = parser.parse_args()
-    
+
     if not args.command:
         parser.print_help()
         return
-        
+
     manager = AWSCredentialManager()
-    
+
     try:
-        if args.command == "add-profile":
+        if args.command == "set":
             await manager.add_profile(
                 args.profile_name,
                 args.access_key,
                 args.secret_key,
                 args.session_token,
-                args.region
+                args.region,
             )
-            
-        elif args.command == "get-credentials":
-            await output_credentials_json(args.profile)
 
-        elif args.command == "export-profile":
-            await output_credentials_plaintext(args.profile_name)
+        elif args.command == "get":
+            if args.format == "credential-process":
+                await output_credentials_json(args.profile_name)
+            elif args.format == "ini":
+                await output_credentials_plaintext(args.profile_name)
+            else:
+                await output_credentials_pretty_json(args.profile_name)
 
-        elif args.command == "set-env":
-            await manager.output_env_vars(args.profile_name, args.shell)
-            
-        elif args.command == "list-profiles":
-            await manager.list_profiles()
-            
-        elif args.command == "remove-profile":
+        elif args.command == "list":
+            if args.format == "json":
+                # Produce JSON list
+                # Reuse list_profiles which prints; instead collect directly
+                profiles = []
+                if manager.credentials_dir.exists():
+                    for file_path in manager.credentials_dir.glob("*.enc"):
+                        profiles.append(file_path.stem)
+                print(json.dumps(sorted(profiles)))
+            else:
+                await manager.list_profiles()
+
+        elif args.command == "delete":
             await manager.remove_profile(args.profile_name)
-            
-        elif args.command == "check-rotation":
-            await manager.check_rotation_needed(args.profile_name)
-            
-        elif args.command == "rotate-credentials":
-            await manager.rotate_credentials(
-                args.profile_name,
-                args.type,
-                args.access_key,
-                args.secret_key,
-                args.session_token
-            )
-            
-        elif args.command == "list-backups":
-            await manager.list_backups(args.profile)
-            
-        elif args.command == "restore-backup":
-            await manager.restore_from_backup(args.profile_name, args.backup_timestamp)
-            
-        elif args.command == "encrypt-profile":
-            await manager.encrypt_aws_profile(args.profile_name, args.output, args.delete_plain)
-            
-        elif args.command == "decrypt-profile":
-            await manager.decrypt_aws_profile(args.encrypted_file, args.profile)
-            
+
+        elif args.command == "export":
+            await manager.output_env_vars(args.profile_name, args.shell)
+
+        elif args.command == "rotate":
+            if args.check:
+                if not args.profile_name:
+                    print("❌ Profile name is required for --check", file=sys.stderr)
+                    sys.exit(2)
+                await manager.check_rotation_needed(args.profile_name)
+            else:
+                if not args.profile_name:
+                    print("❌ Profile name is required", file=sys.stderr)
+                    sys.exit(2)
+                await manager.rotate_credentials(
+                    args.profile_name,
+                    args.type,
+                    args.access_key,
+                    args.secret_key,
+                    args.session_token,
+                )
+
+        elif args.command == "backup":
+            if args.backup_cmd == "list":
+                await manager.list_backups(args.profile)
+            elif args.backup_cmd == "restore":
+                await manager.restore_from_backup(args.profile_name, args.backup_timestamp)
+
+        elif args.command == "profile":
+            if args.profile_cmd == "encrypt":
+                await manager.encrypt_aws_profile(args.profile_name, args.output, args.delete_plain)
+            elif args.profile_cmd == "decrypt":
+                await manager.decrypt_aws_profile(args.encrypted_file, args.profile)
+
     except WindowsHelloError as e:
         print(f"❌ Windows Hello Error: {e}", file=sys.stderr)
         sys.exit(1)
